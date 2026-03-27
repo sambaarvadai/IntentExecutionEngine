@@ -1,0 +1,1 @@
+{"version":3,"file":"compile-old.d.ts","sourceRoot":"","sources":["../../src/execution/compile-old.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,SAAS,EAAE,MAAM,gBAAgB,CAAC;AAG3C,MAAM,WAAW,aAAa;IAC5B,GAAG,EAAE,MAAM,CAAC;IACZ,MAAM,EAAE,GAAG,EAAE,CAAC;CACf;AAED,wBAAgB,YAAY,CAAC,IAAI,EAAE,SAAS,GAAG,aAAa,CA+D3D"}

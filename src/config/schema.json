@@ -1,0 +1,38 @@
+{
+  "tables": {
+    "customers": {
+      "fields": {
+        "id": { "type": "integer", "filterable": true, "selectable": true, "sortable": true },
+        "name": { "type": "text", "filterable": true, "selectable": true, "sortable": true },
+        "city": { "type": "text", "filterable": true, "selectable": true, "sortable": true }
+      },
+      "primaryKey": "id"
+    },
+    "orders": {
+      "fields": {
+        "id": { "type": "integer", "filterable": true, "selectable": true, "sortable": true },
+        "customer_id": { "type": "integer", "filterable": true, "selectable": true, "sortable": true },
+        "item": { "type": "text", "filterable": true, "selectable": true, "sortable": true },
+        "amount": { "type": "real", "filterable": true, "selectable": true, "sortable": true },
+        "created_at": { "type": "text", "filterable": true, "selectable": true, "sortable": true }
+      },
+      "primaryKey": "id",
+      "foreignKeys": [
+        {
+          "field": "customer_id",
+          "references": {
+            "table": "customers",
+            "field": "id"
+          }
+        }
+      ]
+    }
+  },
+  "joins": {
+    "orders.customers": {
+      "from": "orders.customer_id",
+      "to": "customers.id",
+      "type": "left"
+    }
+  }
+}

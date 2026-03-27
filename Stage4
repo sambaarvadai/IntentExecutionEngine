@@ -1,0 +1,215 @@
+What's Been Built
+Stage 1 — Query Engine
+
+compiler/compile.ts — SQL generation, injection-safe, all operators
+plans/validator.ts — schema-aware validation with LLM feedback
+plans/queryPlan.ts — self-correcting pipeline with retry loop
+
+Stage 2 — API Layer
+
+plans/store.ts — QueryPlan persistence
+api/registry.ts — route bindings, status flow (GENERATED→DRAFT→REVIEW→ACTIVE→DEPRECATED)
+api/handler.ts — auth, sanitisation, rate limiting, execution, response filtering, audit logging
+api/generator.ts — LLM-driven API creation from natural language
+api/hydrate.ts — param injection into plans at runtime
+
+Stage 3 — Graph Runtime
+
+graph/runtime.ts — topological sort, parallel execution, condition branching, dataKey flow
+graph/nodes/ — query, transform, condition, notify node factories
+
+Security Layer (wired into handler)
+
+api/sanitise.ts — input sanitisation
+api/rateLimit.ts — sliding window rate limiting
+api/audit.ts — tamper-proof audit log
+api/responseFilter.ts — role-based response filtering by dataLabel
+
+149 tests, 16 suites, all passing
+
+Key Architectural Decisions
+
+QueryPlan is the central contract — everything speaks through it
+Every module exposes only through index.ts — no cross-module internal imports
+dataLabel on APIDefinition drives access control — separate from display label
+Graph nodes reuse the existing compiler/executor directly — no LLM involvement at execution time
+Audit logs paramKeys only — never param values
+
+
+What's Next
+Stage 4 — Intent-to-Graph Engine
+The natural language entry point that generates entire ExecutionGraph objects from a single prompt, using everything built so far as the execution substrate.
+
+Context for Stage 4
+We're building an AI-native backend engine. Stages 1-3 are complete:
+Stage 1 — SQL compiler, plan validator, LLM self-correction pipeline
+Stage 2 — API layer with handler, registry, generator, hydrator, sanitisation, rate limiting, audit logging, response filtering by dataLabel
+Stage 3 — Graph runtime with topological sort, parallel execution, condition branching, and a full node library (query, transform, condition, notify)
+Stack: TypeScript, SQLite (via getDatabase()), Anthropic SDK, Jest — 149 tests passing
+Key files:
+
+plans/types.ts — QueryPlan, APIDefinition, central contracts
+execution/index.ts — compileQuery, executeCompiledQuery
+graph/runtime.ts — GraphRuntime.execute()
+graph/nodes/index.ts — all node factories
+api/handler.ts — full request pipeline
+context/types.ts — RequestContext, DataAccessLabel
+
+Stage 4 goal: Intent-to-graph engine. A single natural language prompt generates a complete ExecutionGraph, validates it, and executes it using the existing runtime. The LLM's job is to produce the graph structure — the runtime handles execution deterministically.
+Known gaps to address after Stage 4: dialect abstraction, schema introspection, persistence, multi-tenancy, auth provider integration, distributed execution.
+
+Stage 4 Design
+What it does
+A single natural language prompt generates a complete ExecutionGraph which the existing GraphRuntime executes.
+"Show Chennai customers and their total orders"
+        ↓
+Intent Engine (LLM)
+        ↓
+ExecutionGraph {
+  nodes: [fetchCustomers, fetchOrders, merge, format],
+  edges: [...]
+}
+        ↓
+GraphRuntime.execute(graph)
+        ↓
+Result
+The LLM's job is narrow — produce a valid graph JSON. The runtime handles everything else. This is the same pattern as Stage 1 where the LLM produces a QueryPlan JSON and the compiler handles execution.
+
+The Core Types Needed
+typescript// intent/types.ts
+
+export interface IntentRequest {
+  prompt: string
+  context?: RequestContext      // auth context flows through
+  options?: {
+    maxNodes?: number           // default 10
+    allowParallel?: boolean     // default true
+    dryRun?: boolean            // validate without executing
+  }
+}
+
+export interface IntentResult {
+  graph: ExecutionGraph         // what was generated
+  result: GraphResult           // what was executed
+  generationMs: number          // how long LLM took
+  executionMs: number           // how long graph took
+  prompt: string                // original prompt
+}
+
+export interface IntentParseResult {
+  graph: ExecutionGraph
+  confidence: number
+  reasoning?: string            // why the LLM chose this graph shape
+}
+```
+
+---
+
+## The Flow
+```
+IntentEngine.execute(prompt, context)
+        ↓
+1. Build system prompt with schema + node library catalogue
+        ↓
+2. LLM generates ExecutionGraph JSON
+        ↓
+3. validateGraph(graph)         ← existing function
+   if invalid → self-correct up to 3 times (same pattern as QueryPlan)
+        ↓
+4. GraphRuntime.execute(graph)  ← existing runtime
+        ↓
+5. Return IntentResult
+```
+
+**The self-correction loop is already proven** — we built it in Stage 1 for `QueryPlan`. Stage 4 applies the same pattern to `ExecutionGraph`.
+
+---
+
+## The System Prompt Strategy
+
+The LLM needs to know three things:
+
+**1. Available tables and schema**
+Same `schemaMetadata` the validator uses — injected into the system prompt.
+
+**2. Available node types**
+A catalogue of what nodes can do:
+```
+query node    — fetches data from a table with optional filters
+transform     — mergeByKey, filterRows, pickFields, sortRows, limitRows, aggregateRows
+condition     — ifEmpty, ifRowCountAbove, ifFieldEquals
+notify        — buildLogNode, buildWebhookNode
+3. Output format
+The LLM must return only valid ExecutionGraph JSON — same discipline as the QueryPlan system prompt.
+
+Key Design Decisions
+Node IDs are generated by the LLM — it names them semantically (fetch-customers, filter-chennai, merge-results). The runtime doesn't care what they're called as long as edges reference valid IDs.
+Plans inside query nodes are generated inline — the LLM doesn't reference stored plans. It generates the QueryPlan JSON directly inside each query node's plan field.
+Transform functions can't be LLM-generated — transform and condition fields are JavaScript functions, not JSON. The LLM specifies which factory function to use and what parameters to pass. The intent engine then calls the factory function to build the actual node.
+This last point is the most important design decision. It means the LLM output for a transform node looks like:
+json{
+  "id": "filter-chennai",
+  "type": "transform",
+  "factory": "filterRows",
+  "params": {
+    "dataKey": "customers",
+    "predicate": "row.city === 'Chennai'"
+  }
+}
+And the intent engine converts this to a real node by calling:
+typescriptfilterRows({
+  id: 'filter-chennai',
+  label: 'Filter Chennai customers',
+  dataKey: 'customers',
+  predicate: (row) => row.city === 'Chennai'
+})
+The predicate string gets safely eval'd or pattern-matched — never executed directly from LLM output.
+
+The Predicate Safety Problem
+This is the hardest part of Stage 4. LLM-generated predicate strings can't be eval()'d safely. The solution is a constrained predicate DSL:
+typescript// Instead of arbitrary JS, the LLM picks from allowed patterns
+type PredicateSpec =
+  | { op: 'equals', field: string, value: any }
+  | { op: 'greaterThan', field: string, value: number }
+  | { op: 'contains', field: string, value: string }
+  | { op: 'in', field: string, values: any[] }
+
+// Intent engine converts to real predicate
+function buildPredicate(spec: PredicateSpec): (row: any) => boolean {
+  switch (spec.op) {
+    case 'equals': return (row) => row[spec.field] === spec.value
+    case 'greaterThan': return (row) => row[spec.field] > spec.value
+    case 'contains': return (row) => String(row[spec.field]).includes(spec.value)
+    case 'in': return (row) => spec.values.includes(row[spec.field])
+  }
+}
+```
+
+Same principle as the SQL compiler — LLM produces structured intent, deterministic code handles execution.
+
+---
+
+## File Structure for Stage 4
+```
+/intent
+  types.ts          ← IntentRequest, IntentResult, IntentParseResult
+  engine.ts         ← IntentEngine class, main execute() method
+  promptBuilder.ts  ← builds system prompt from schema + node catalogue
+  graphParser.ts    ← converts LLM JSON output to real ExecutionGraph
+                      (this is where predicate specs become real functions)
+  index.ts          ← public interface
+```
+
+---
+
+## What to Tell Windsurf in the New Conversation
+
+Build in this order:
+```
+1. intent/types.ts
+2. intent/promptBuilder.ts
+3. intent/graphParser.ts       ← most complex, converts LLM JSON to real nodes
+4. intent/engine.ts            ← wires everything together
+5. intent/index.ts
+6. tests
+The graphParser.ts is the heart of Stage 4 — it's where the boundary between LLM output and deterministic execution lives. Everything else is plumbing.

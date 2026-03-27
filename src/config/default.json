@@ -1,0 +1,21 @@
+{
+  "database": {
+    "filename": "database.db",
+    "path": "./"
+  },
+  "llm": {
+    "provider": "anthropic",
+    "model": "claude-opus-4-6",
+    "maxTokens": 1000
+  },
+  "app": {
+    "name": "NL2DB Prototype",
+    "maxQueryLimit": 20,
+    "debug": true
+  },
+  "pipeline": {
+    "enabled": true,
+    "maxCorrectionAttempts": 3,
+    "enableResponseReframing": true
+  }
+}
