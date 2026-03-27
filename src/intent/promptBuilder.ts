@@ -18,7 +18,7 @@ SCHEMA:
 ${JSON.stringify(schema, null, 2)}
 
 RELATIONSHIPS:
-${schema.relationships.map(rel => `  ${rel.fromTable}.${rel.fromField} → ${rel.toTable}.${rel.toField} (${rel.type})`).join('\n')}
+${schema.relationships?.map(rel => `  ${rel.fromTable}.${rel.fromField} → ${rel.toTable}.${rel.toField} (${rel.type})`).join('\n') || '  No relationships defined'}
 
 NODE TYPE SPECIFICATIONS:
 
