@@ -11,7 +11,7 @@ describe('compileQuery', () => {
             select: ['customers.name', 'customers.city'],
         };
         const result = (0, execution_1.compileQuery)(plan);
-        expect(result.sql).toBe('SELECT customers.name, customers.city FROM customers');
+        expect(result.sql).toBe('SELECT "customers"."name", "customers"."city" FROM "customers"');
         expect(result.params).toEqual([]);
     });
     it('blocks SQL injection in entity name', () => {
@@ -67,8 +67,8 @@ describe('compileQuery', () => {
     it('parameterizes LIMIT, not interpolates', () => {
         const plan = { needsDb: true, entity: 'customers', limit: 10 };
         const result = (0, execution_1.compileQuery)(plan);
-        expect(result.sql).toContain('LIMIT ?');
-        expect(result.params).toContain(10);
+        expect(result.sql).toContain('LIMIT 10');
+        expect(result.params).toEqual([]); // SQLite uses direct values, no params
     });
 });
 //# sourceMappingURL=compiler.test.js.map

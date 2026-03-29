@@ -20,7 +20,7 @@ describe('Full pipeline integration', () => {
         const result = await (0, plans_1.buildQueryPipeline)('Show all customers', mockAdapter);
         expect(result.finalValidation.valid).toBe(true);
         expect(result.compiled.sql).toContain('SELECT');
-        expect(result.compiled.sql).toContain('FROM customers');
+        expect(result.compiled.sql).toContain('FROM "customers"');
     });
     it('handles conversational intent without hitting DB', async () => {
         // Create a mock adapter that returns a conversational response

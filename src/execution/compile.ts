@@ -1,5 +1,6 @@
 import { QueryPlan } from '../plans/types';
 import { getSchemaMetadata } from '../schema/metadata';
+import { Dialect, getDialect } from './compiler/dialects';
 
 export interface CompiledQuery {
   sql: string;
@@ -94,7 +95,9 @@ interface WhereCondition {
 
 function compileWhereConditions(
   conditions: WhereCondition[],
-  params: any[]
+  params: any[],
+  dialect: Dialect,
+  placeholderIndex: { value: number }
 ): string {
   const parts: string[] = [];
 
@@ -104,7 +107,7 @@ function compileWhereConditions(
 
     // Nested condition group
     if (condition.conditions && condition.conditions.length > 0) {
-      const nested = compileWhereConditions(condition.conditions, params);
+      const nested = compileWhereConditions(condition.conditions, params, dialect, placeholderIndex);
       parts.push(`${connector}(${nested})`);
       continue;
     }
@@ -114,7 +117,7 @@ function compileWhereConditions(
 
     // Operators that take no value
     if (op === 'IS NULL' || op === 'IS NOT NULL') {
-      parts.push(`${connector}${field} ${op}`);
+      parts.push(`${connector}${dialect.quoteIdentifier(field)} ${op}`);
       continue;
     }
 
@@ -123,9 +126,9 @@ function compileWhereConditions(
       if (!Array.isArray(condition.value) || condition.value.length === 0) {
         throw new Error(`${op} requires a non-empty array value for field "${field}"`);
       }
-      const placeholders = condition.value.map(() => '?').join(', ');
+      const placeholders = condition.value.map(() => dialect.placeholder(placeholderIndex.value++)).join(', ');
       params.push(...condition.value);
-      parts.push(`${connector}${field} ${op} (${placeholders})`);
+      parts.push(`${connector}${dialect.quoteIdentifier(field)} ${op} (${placeholders})`);
       continue;
     }
 
@@ -135,20 +138,20 @@ function compileWhereConditions(
         throw new Error(`BETWEEN requires a [min, max] array for field "${field}"`);
       }
       params.push(condition.value[0], condition.value[1]);
-      parts.push(`${connector}${field} BETWEEN ? AND ?`);
+      parts.push(`${connector}${dialect.quoteIdentifier(field)} BETWEEN ${dialect.placeholder(placeholderIndex.value++)} AND ${dialect.placeholder(placeholderIndex.value++)}`);
       continue;
     }
 
     // Case-insensitive equality for strings
     if (op === '=' && typeof condition.value === 'string') {
       params.push(condition.value);
-      parts.push(`${connector}LOWER(${field}) = LOWER(?)`);
+      parts.push(`${connector}LOWER(${dialect.quoteIdentifier(field)}) = LOWER(${dialect.placeholder(placeholderIndex.value++)})`);
       continue;
     }
 
     // Default: single-value operator
     params.push(condition.value);
-    parts.push(`${connector}${field} ${op} ?`);
+    parts.push(`${connector}${dialect.quoteIdentifier(field)} ${op} ${dialect.placeholder(placeholderIndex.value++)}`);
   }
 
   return parts.join('');
@@ -164,7 +167,7 @@ interface Aggregate {
   alias?: string;
 }
 
-function compileAggregate(aggregate: Aggregate): string {
+function compileAggregate(aggregate: Aggregate, dialect: Dialect): string {
   const type = aggregate.type.toLowerCase();
   if (!ALLOWED_AGGREGATE_TYPES.has(type)) {
     throw new Error(`Unsupported aggregation: "${aggregate.type}"`);
@@ -174,7 +177,7 @@ function compileAggregate(aggregate: Aggregate): string {
   switch (type) {
     case 'count':
       expr = aggregate.field
-        ? `COUNT(${validateIdentifier(aggregate.field, 'aggregate')})`
+        ? `COUNT(${dialect.quoteIdentifier(validateIdentifier(aggregate.field, 'aggregate'))})`
         : 'COUNT(*)';
       break;
     case 'sum':
@@ -184,21 +187,25 @@ function compileAggregate(aggregate: Aggregate): string {
       if (!aggregate.field) {
         throw new Error(`Aggregation "${type}" requires a field`);
       }
-      expr = `${type.toUpperCase()}(${validateIdentifier(aggregate.field, 'aggregate')})`;
+      expr = `${type.toUpperCase()}(${dialect.quoteIdentifier(validateIdentifier(aggregate.field, 'aggregate'))})`;
       break;
     default:
       throw new Error(`Unsupported aggregation: "${aggregate.type}"`);
   }
 
-  return aggregate.alias ? `${expr} AS ${validateIdentifier(aggregate.alias, 'aggregate alias')}` : expr;
+  return aggregate.alias ? `${expr} AS ${dialect.quoteIdentifier(validateIdentifier(aggregate.alias, 'aggregate alias'))}` : expr;
 }
 
 // ------------------------------------------------------------------
 // Main compiler
 // ------------------------------------------------------------------
 
-export function compileQuery(plan: QueryPlan): CompiledQuery {
+export function compileQuery(
+  plan: QueryPlan, 
+  dialect: Dialect = getDialect('sqlite')  // default preserves current behaviour
+): CompiledQuery {
   const params: any[] = [];
+  const placeholderIndex = { value: 1 }; // Start from 1 for Postgres $1, $2 etc
   let sql = 'SELECT ';
 
   // --- SELECT clause ---
@@ -207,16 +214,21 @@ export function compileQuery(plan: QueryPlan): CompiledQuery {
   // Support multiple aggregates
   if (plan.aggregate) {
     const aggregates = Array.isArray(plan.aggregate) ? plan.aggregate : [plan.aggregate];
-    selectParts.push(...aggregates.map(compileAggregate));
+    selectParts.push(...aggregates.map(agg => compileAggregate(agg, dialect)));
   }
 
   // Non-aggregate select fields (coexist with aggregates for GROUP BY queries)
   if (plan.select && plan.select.length > 0) {
     const selectFields = plan.select.map(field => {
       if (field.includes('*')) {
-        return field; // Keep wildcard as-is for any table
+        // Handle table.* by quoting only the table part
+        if (field.includes('.')) {
+          const [table, wildcard] = field.split('.');
+          return `${dialect.quoteIdentifier(table)}.${wildcard}`;
+        }
+        return field; // Just * by itself
       }
-      return validateIdentifier(field, 'SELECT');
+      return dialect.quoteIdentifier(validateIdentifier(field, 'SELECT'));
     });
     selectParts.push(...selectFields);
   }
@@ -224,7 +236,7 @@ export function compileQuery(plan: QueryPlan): CompiledQuery {
   sql += selectParts.length > 0 ? selectParts.join(', ') : '*';
 
   // --- FROM clause ---
-  sql += ` FROM ${validateIdentifier(plan.entity!, 'FROM')}`;
+  sql += ` FROM ${dialect.quoteIdentifier(validateIdentifier(plan.entity!, 'FROM'))}`;
 
   // --- JOINs ---
   if (plan.join && plan.join.length > 0) {
@@ -244,29 +256,29 @@ export function compileQuery(plan: QueryPlan): CompiledQuery {
         throw new Error(`No join condition defined between "${plan.entity}" and "${validatedJoinTable}"`);
       }
 
-      sql += ` ${joinType} JOIN ${validatedJoinTable} ON ${joinCondition}`;
+      sql += ` ${joinType} JOIN ${dialect.quoteIdentifier(validatedJoinTable)} ON ${joinCondition}`;
     }
   }
 
   // --- WHERE clause ---
   if (plan.where && plan.where.length > 0) {
-    const whereClause = compileWhereConditions(plan.where, params);
+    const whereClause = compileWhereConditions(plan.where, params, dialect, placeholderIndex);
     sql += ` WHERE ${whereClause}`;
   }
 
   // --- GROUP BY ---
   // Explicit groupBy field takes priority; falls back to select fields when aggregate is present
   if (plan.groupBy && plan.groupBy.length > 0) {
-    const groupFields = plan.groupBy.map(f => validateIdentifier(f, 'GROUP BY'));
+    const groupFields = plan.groupBy.map(f => dialect.quoteIdentifier(validateIdentifier(f, 'GROUP BY')));
     sql += ` GROUP BY ${groupFields.join(', ')}`;
   } else if (plan.aggregate && plan.select && plan.select.length > 0) {
-    const groupFields = plan.select.map(f => validateIdentifier(f, 'GROUP BY'));
+    const groupFields = plan.select.map(f => dialect.quoteIdentifier(validateIdentifier(f, 'GROUP BY')));
     sql += ` GROUP BY ${groupFields.join(', ')}`;
   }
 
   // --- HAVING ---
   if (plan.having && plan.having.length > 0) {
-    const havingClause = compileWhereConditions(plan.having, params);
+    const havingClause = compileWhereConditions(plan.having, params, dialect, placeholderIndex);
     sql += ` HAVING ${havingClause}`;
   }
 
@@ -276,21 +288,28 @@ export function compileQuery(plan: QueryPlan): CompiledQuery {
     const orderClauses = orderEntries.map(entry => {
       const field = validateIdentifier(entry.field, 'ORDER BY');
       const direction = validateDirection(entry.direction);
-      return `${field} ${direction}`;
+      return `${dialect.quoteIdentifier(field)} ${direction}`;
     });
     sql += ` ORDER BY ${orderClauses.join(', ')}`;
   }
 
-  // --- LIMIT ---
-  if (plan.limit !== undefined && plan.limit !== null) {
-    sql += ' LIMIT ?';
-    params.push(validateLimit(plan.limit));
-  }
-
-  // --- OFFSET ---
-  if (plan.offset !== undefined && plan.offset !== null) {
-    sql += ' OFFSET ?';
-    params.push(validateOffset(plan.offset));
+  // --- LIMIT/OFFSET ---
+  const limitOffsetClause = dialect.limitOffset(
+    plan.limit !== undefined && plan.limit !== null ? validateLimit(plan.limit) : undefined,
+    plan.offset !== undefined && plan.offset !== null ? validateOffset(plan.offset) : undefined
+  );
+  if (limitOffsetClause) {
+    sql += ` ${limitOffsetClause}`;
+    // Only push limit/offset params if the dialect uses placeholders
+    // SQLite and MySQL use direct values in LIMIT/OFFSET, Postgres uses placeholders
+    if (dialect.name === 'postgres') {
+      if (plan.limit !== undefined && plan.limit !== null) {
+        params.push(validateLimit(plan.limit));
+      }
+      if (plan.offset !== undefined && plan.offset !== null) {
+        params.push(validateOffset(plan.offset));
+      }
+    }
   }
 
   return { sql, params };

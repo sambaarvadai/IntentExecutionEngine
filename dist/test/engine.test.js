@@ -24,7 +24,8 @@ jest.mock('../schema/metadata', () => ({
         },
         allowedAggregations: ['count', 'sum', 'avg', 'min', 'max'],
         allowedOperators: ['=', '!=', '>', '<', '>=', '<=', 'LIKE'],
-        maxLimit: 20
+        maxLimit: 20,
+        relationships: []
     })
 }));
 jest.mock('../config', () => ({
@@ -75,7 +76,7 @@ describe('IntentEngine', () => {
         it('returns IntentResult with timing when SDK returns valid ExecutionGraph', async () => {
             // Mock successful response with small delay to ensure timing > 0
             mockCreate.mockImplementation(async () => {
-                await new Promise(resolve => setTimeout(resolve, 1));
+                await new Promise(resolve => setTimeout(resolve, 10));
                 return {
                     content: [{
                             type: 'text',

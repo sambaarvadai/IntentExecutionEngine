@@ -22,7 +22,7 @@ describe('Full pipeline integration', () => {
 
     expect(result.finalValidation.valid).toBe(true)
     expect(result.compiled.sql).toContain('SELECT')
-    expect(result.compiled.sql).toContain('FROM customers')
+    expect(result.compiled.sql).toContain('FROM "customers"')
   })
 
   it('handles conversational intent without hitting DB', async () => {
