@@ -4,6 +4,28 @@ import { IntentEngine } from '../intent/engine';
 import { IntentParseError } from '../intent/graphParser';
 import { ExecutionGraph, GraphResult } from '../graph/types';
 import Anthropic from '@anthropic-ai/sdk';
+import { open, Database } from 'sqlite';
+import sqlite3 from 'sqlite3';
+
+// Mock the graph database
+jest.mock('../graph/store/db', () => ({
+  getGraphDatabase: jest.fn()
+}));
+
+// Mock the graph store
+jest.mock('../graph/store', () => ({
+  graphRepository: {
+    save: jest.fn(),
+    findById: jest.fn(),
+    updateStatus: jest.fn(),
+    incrementUsage: jest.fn(),
+    query: jest.fn(),
+    stats: jest.fn()
+  }
+}));
+
+import { getGraphDatabase } from '../graph/store/db';
+import { graphRepository } from '../graph/store';
 
 // Mock the Anthropic SDK
 jest.mock('@anthropic-ai/sdk');
@@ -33,6 +55,10 @@ jest.mock('../config', () => ({
     llm: {
       model: 'claude-opus-4-6',
       maxTokens: 4096
+    },
+    database: {
+      path: './test-data',
+      filename: 'test.db'
     }
   })
 }));
@@ -42,9 +68,37 @@ describe('IntentEngine', () => {
   let mockMessages: any;
   let mockCreate: jest.MockedFunction<any>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Reset mocks
     jest.clearAllMocks();
+    
+    // Mock getGraphDatabase function (not really needed since we mock the repository)
+    (getGraphDatabase as jest.Mock).mockResolvedValue({});
+    
+    // Set up graphRepository mocks
+    (graphRepository.save as jest.Mock).mockResolvedValue({
+      id: 'test-graph-id',
+      prompt: 'test prompt',
+      graphJson: '{"id":"test"}',
+      status: 'draft',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      generationMs: 100,
+      executionMs: 200,
+      executionCount: 0,
+      lastUsedAt: null,
+      approvedBy: null,
+      approvalNote: null,
+      nodeCount: 1,
+      success: true,
+      errorMessage: null
+    });
+    
+    (graphRepository.findById as jest.Mock).mockResolvedValue(null);
+    (graphRepository.updateStatus as jest.Mock).mockResolvedValue({});
+    (graphRepository.incrementUsage as jest.Mock).mockResolvedValue(undefined);
+    (graphRepository.query as jest.Mock).mockResolvedValue([]);
+    (graphRepository.stats as jest.Mock).mockResolvedValue({ total: 0, byStatus: { draft: 0, approved: 0, rejected: 0, deprecated: 0 } });
     
     // Create mock Anthropic instance
     const mockAnthropicInstance = {
@@ -59,6 +113,10 @@ describe('IntentEngine', () => {
     mockMessages = mockAnthropicInstance.messages;
     
     engine = new IntentEngine(mockAnthropicInstance);
+  });
+  
+  afterEach(async () => {
+    // No database cleanup needed since we're mocking the repository
   });
 
   describe('execute', () => {

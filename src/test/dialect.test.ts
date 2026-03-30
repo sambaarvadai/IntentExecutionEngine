@@ -129,7 +129,7 @@ describe('compileQuery dialect integration', () => {
 
     expect(result.sql).toContain('"customers"."name"');
     expect(result.sql).toContain('"customers"."city"');
-    expect(result.sql).toContain('LOWER("customers"."city") = LOWER(?)');
+    expect(result.sql).toContain('LOWER(customers.city) = LOWER(?)'); // Raw identifiers in WHERE
     expect(result.sql).toContain('LIMIT 10 OFFSET 5');
     expect(result.params).toEqual(['New York']); // No limit/offset params for SQLite
   });
@@ -141,7 +141,7 @@ describe('compileQuery dialect integration', () => {
 
     expect(result.sql).toContain('"customers"."name"');
     expect(result.sql).toContain('"customers"."city"');
-    expect(result.sql).toContain('LOWER("customers"."city") = LOWER($1)');
+    expect(result.sql).toContain('customers.city ILIKE $1'); // Raw identifiers, ILIKE for Postgres
     expect(result.sql).toContain('LIMIT 10 OFFSET 5');
     expect(result.params).toEqual(['New York', 10, 5]); // Includes limit/offset params for Postgres
   });
@@ -153,7 +153,7 @@ describe('compileQuery dialect integration', () => {
 
     expect(result.sql).toContain('`customers`.`name`');
     expect(result.sql).toContain('`customers`.`city`');
-    expect(result.sql).toContain('LOWER(`customers`.`city`) = LOWER(?)');
+    expect(result.sql).toContain('LOWER(customers.city) = LOWER(?)'); // Raw identifiers in WHERE
     expect(result.sql).toContain('LIMIT 5, 10'); // MySQL offset, count syntax
     expect(result.params).toEqual(['New York']); // No limit/offset params for MySQL
   });
@@ -162,7 +162,7 @@ describe('compileQuery dialect integration', () => {
     const result = compileQuery(plan); // No dialect parameter
 
     expect(result.sql).toContain('"customers"."name"'); // Double quotes from SQLite
-    expect(result.sql).toContain('LOWER("customers"."city") = LOWER(?)'); // ? placeholders from SQLite
+    expect(result.sql).toContain('LOWER(customers.city) = LOWER(?)'); // Raw identifiers, ? placeholders from SQLite
     expect(result.params).toEqual(['New York']);
   });
 });

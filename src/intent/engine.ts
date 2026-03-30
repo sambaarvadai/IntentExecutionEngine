@@ -25,6 +25,10 @@ import {
 } from '../graph/types';
 
 import { 
+  graphRepository 
+} from '../graph/store';
+
+import { 
   parseIntentGraph 
 } from './graphParser';
 
@@ -105,10 +109,19 @@ export class IntentEngine {
           dryRun: true
         });
 
+        // Save the graph for dry runs
+        const stored = await graphRepository.save({
+          prompt: request.prompt,
+          graph,
+          generationMs,
+          executionMs: 0,
+          success: true
+        });
+
         return {
           graph,
           result: {
-            graphId: graph.id,
+            graphId: stored.id,
             success: true,
             nodeResults: new Map(),
             finalOutput: null,
@@ -116,7 +129,8 @@ export class IntentEngine {
           },
           generationMs,
           executionMs: 0,
-          prompt: request.prompt
+          prompt: request.prompt,
+          storedGraphId: stored.id
         };
       }
 
@@ -148,12 +162,26 @@ export class IntentEngine {
         dryRun: false
       });
 
+      // Save the executed graph
+      const stored = await graphRepository.save({
+        prompt: request.prompt,
+        graph,
+        generationMs,
+        executionMs,
+        success: result.success,
+        errorMessage: result.success ? undefined : 
+          (result.failedNode 
+            ? `Failed at node: ${result.failedNode}` 
+            : 'Unknown error')
+      });
+
       return {
         graph,
         result,
         generationMs,
         executionMs,
-        prompt: request.prompt
+        prompt: request.prompt,
+        storedGraphId: stored.id
       };
     } catch (error) {
       // Log error execution

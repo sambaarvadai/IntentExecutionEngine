@@ -9,6 +9,7 @@
     "dev": "ts-node src/main.ts",
     "setup-db": "ts-node src/setup-db.ts",
     "init-db": "ts-node src/db/init.ts",
+    "migrate-graphs": "ts-node src/db/migrate-graph-tables.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
