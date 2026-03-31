@@ -48,7 +48,7 @@ const ALLOWED_JOIN_TYPES = new Set([
 const ALLOWED_DIRECTIONS = new Set(['ASC', 'DESC']);
 
 const ALLOWED_AGGREGATE_TYPES = new Set([
-  'count', 'sum', 'avg', 'min', 'max',
+  'count', 'countdistinct', 'sum', 'avg', 'min', 'max',
 ]);
 
 // ------------------------------------------------------------------
@@ -225,6 +225,8 @@ interface Aggregate {
 
 function compileAggregate(aggregate: Aggregate, dialect: Dialect): string {
   const type = aggregate.type.toLowerCase();
+  console.log('[DEBUG] compileAggregate type:', type, 
+    'allowed:', ALLOWED_AGGREGATE_TYPES.has(type));
   if (!ALLOWED_AGGREGATE_TYPES.has(type)) {
     throw new Error(`Unsupported aggregation: "${aggregate.type}"`);
   }
@@ -236,7 +238,7 @@ function compileAggregate(aggregate: Aggregate, dialect: Dialect): string {
         ? `COUNT(${validateIdentifier(aggregate.field, 'aggregate', dialect)})`
         : 'COUNT(*)';
       break;
-    case 'countDistinct':
+    case 'countdistinct':
       if (!aggregate.field) {
         throw new Error(`Aggregation "countDistinct" requires a field`);
       }
@@ -326,7 +328,23 @@ export function compileQuery(
     selectParts.push(...selectFields);
   }
 
-  sql += selectParts.length > 0 ? selectParts.join(', ') : '*';
+  // If groupBy is present with aggregate, include groupBy fields
+  // in SELECT so results show both the group label and aggregate value
+  if (plan.aggregate && plan.groupBy && plan.groupBy.length > 0 
+      && selectParts.length > 0) {
+    const groupSelects = plan.groupBy.map(f => {
+      if (f.includes('(')) return `${f} AS "month"`;  // expression
+      return validateIdentifier(f, 'SELECT groupBy', dialect);
+    });
+    // Prepend group fields before aggregate
+    selectParts.unshift(...groupSelects);
+  }
+
+  sql += selectParts.length > 0 
+    ? (plan as any).distinct 
+      ? `DISTINCT ${selectParts.join(', ')}` 
+      : selectParts.join(', ')
+    : (plan as any).distinct ? 'DISTINCT *' : '*';
 
   // --- FROM clause ---
   sql += ` FROM ${validateIdentifier(plan.entity!, 'FROM', dialect)}`;
@@ -357,9 +375,21 @@ export function compileQuery(
   }
 
   // --- GROUP BY ---
+  console.log('[DEBUG] groupBy fields:', plan.groupBy);
   // Explicit groupBy field takes priority; falls back to select fields when aggregate is present
   if (plan.groupBy && plan.groupBy.length > 0) {
-    const groupFields = plan.groupBy.map(f => validateIdentifier(f, 'GROUP BY', dialect));
+    const groupFields = plan.groupBy.map(f => {
+      // If it contains ( it's a SQL expression — pass through safely
+      // Only allow known safe function names to prevent injection
+      if (f.includes('(')) {
+        const safeFunctions = /^(strftime|date|datetime|julianday|time|year|month|day|hour|COALESCE|NULLIF|ROUND|FLOOR|CEIL|ABS|LENGTH|UPPER|LOWER|TRIM|SUBSTR|REPLACE|CAST|COUNT|SUM|AVG|MIN|MAX)\s*\(/i;
+        if (!safeFunctions.test(f.trim())) {
+          throw new Error(`Unsafe expression in GROUP BY: "${f}"`);
+        }
+        return f; // pass expression through as-is
+      }
+      return validateIdentifier(f, 'GROUP BY', dialect);
+    });
     sql += ` GROUP BY ${groupFields.join(', ')}`;
   } else if (plan.aggregate && plan.select && plan.select.length > 0) {
     const groupFields = plan.select.map(f => validateIdentifier(f, 'GROUP BY', dialect));
@@ -375,12 +405,22 @@ export function compileQuery(
   // --- ORDER BY ---
   if (plan.orderBy) {
     const orderEntries = Array.isArray(plan.orderBy) ? plan.orderBy : [plan.orderBy];
-    const orderClauses = orderEntries.map(entry => {
-      const field = validateIdentifier(entry.field, 'ORDER BY', dialect);
-      const direction = validateDirection(entry.direction);
-      return `${field} ${direction}`;
-    });
-    sql += ` ORDER BY ${orderClauses.join(', ')}`;
+    if (orderEntries.length > 0) {
+      const orderClauses = orderEntries.map(entry => {
+        const field = entry.field.includes('(')
+          ? (() => {
+              const safeFunctions = /^(strftime|date|datetime|julianday|time|year|month|day|hour|COALESCE|NULLIF|ROUND|FLOOR|CEIL|ABS|LENGTH|UPPER|LOWER|TRIM|SUBSTR|REPLACE|CAST|COUNT|SUM|AVG|MIN|MAX)\s*\(/i;
+              if (!safeFunctions.test(entry.field.trim())) {
+                throw new Error(`Unsafe expression in ORDER BY: "${entry.field}"`);
+              }
+              return entry.field;
+            })()
+          : validateIdentifier(entry.field, 'ORDER BY', dialect);
+        const direction = validateDirection(entry.direction);
+        return `${field} ${direction}`;
+      });
+      sql += ` ORDER BY ${orderClauses.join(', ')}`;
+    }
   }
 
   // --- LIMIT/OFFSET ---

@@ -34,6 +34,7 @@ export interface QueryPlan {
   orderBy?: OrderByDef | OrderByDef[];
   limit?: number;
   offset?: number;
+  distinct?: boolean;
   responseMode?: 'conversational';
 }
 

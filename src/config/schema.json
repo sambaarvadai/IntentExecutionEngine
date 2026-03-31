@@ -1,4 +1,6 @@
 {
+  "dateFormat": "ISO8601",
+  "dateExample": "2024-01-15T10:30:00Z",
   "tables": {
     "customers": {
       "fields": {
@@ -14,7 +16,14 @@
         "customer_id": { "type": "integer", "filterable": true, "selectable": true, "sortable": true },
         "item": { "type": "text", "filterable": true, "selectable": true, "sortable": true },
         "amount": { "type": "real", "filterable": true, "selectable": true, "sortable": true },
-        "created_at": { "type": "text", "filterable": true, "selectable": true, "sortable": true }
+        "created_at": { 
+          "type": "text", 
+          "format": "ISO8601",
+          "example": "2024-01-15T10:30:00Z",
+          "filterable": true, 
+          "selectable": true, 
+          "sortable": true 
+        }
       },
       "primaryKey": "id",
       "foreignKeys": [

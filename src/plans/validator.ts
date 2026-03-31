@@ -41,7 +41,7 @@ const ALLOWED_JOIN_TYPES = new Set([
 const ALLOWED_DIRECTIONS = new Set(['ASC', 'DESC']);
 
 const ALLOWED_AGGREGATE_TYPES = new Set([
-  'count', 'countDistinct', 'sum', 'avg', 'min', 'max',
+  'count', 'countdistinct', 'sum', 'avg', 'min', 'max',
 ]);
 
 const IDENTIFIER_REGEX = /^[a-zA-Z_][a-zA-Z0-9_.]*(\.\*)?$/;
@@ -312,8 +312,16 @@ function validateOrderBy(
 
     if (!entry.field) {
       issues.push(error(`${path}.field`, 'ORDER BY entry is missing "field".'));
+    } else if (entry.field.includes('(')) {
+      const SAFE_EXPRESSION = /^(strftime|date|datetime|julianday|time|COALESCE|NULLIF|ROUND|FLOOR|CEIL|ABS|LENGTH|UPPER|LOWER|TRIM|SUBSTR|REPLACE|CAST|COUNT|SUM|AVG|MIN|MAX)\s*\(/i;
+      if (!SAFE_EXPRESSION.test(entry.field.trim())) {
+        issues.push(error(`${path}.field`, 
+          `Unsafe expression in ORDER BY: "${entry.field}".`));
+      }
+      // Valid expression — no further checks needed
     } else if (!isValidIdentifier(entry.field)) {
-      issues.push(error(`${path}.field`, `Invalid ORDER BY field: "${entry.field}".`));
+      issues.push(error(`${path}.field`, 
+        `Invalid ORDER BY field: "${entry.field}".`));
     }
 
     if (!entry.direction) {
@@ -353,9 +361,19 @@ function validateGroupBy(
 ): void {
   if (!plan.groupBy || plan.groupBy.length === 0) return;
 
+  const SAFE_EXPRESSION = /^(strftime|date|datetime|julianday|time|COALESCE|NULLIF|ROUND|FLOOR|CEIL|ABS|LENGTH|UPPER|LOWER|TRIM|SUBSTR|REPLACE|CAST|COUNT|SUM|AVG|MIN|MAX)\s*\(/i;
+
   plan.groupBy.forEach((field, i) => {
-    if (!isValidIdentifier(field)) {
-      issues.push(error(`groupBy[${i}]`, `Invalid GROUP BY field: "${field}".`));
+    if (field.includes('(')) {
+      // SQL expression — validate it uses a safe function
+      if (!SAFE_EXPRESSION.test(field.trim())) {
+        issues.push(error(`groupBy[${i}]`, 
+          `Unsafe expression in GROUP BY: "${field}".`));
+      }
+      // Don't check against schema columns for expressions
+    } else if (!isValidIdentifier(field)) {
+      issues.push(error(`groupBy[${i}]`, 
+        `Invalid GROUP BY field: "${field}".`));
     }
   });
 
@@ -435,6 +453,54 @@ function getAllAvailableColumns(plan: QueryPlan, schema: ReturnType<typeof getSc
 // Main validator
 // ------------------------------------------------------------------
 
+function validateHavingConditions(
+  conditions: any[],
+  issues: ValidationIssue[]
+): void {
+  conditions.forEach((condition, i) => {
+    const path = `having[${i}]`;
+
+    // Field can be an aggregate alias or expression — skip schema check
+    if (!condition.field) {
+      issues.push(error(`${path}.field`, 
+        'HAVING condition is missing "field".'));
+    }
+
+    // Operator
+    if (!condition.op) {
+      issues.push(error(`${path}.op`, 
+        'HAVING condition is missing "op".',
+        `Use one of: ${[...ALLOWED_OPS].join(', ')}`));
+    } else {
+      const normalizedOp = condition.op.trim().toUpperCase();
+      if (!ALLOWED_OPS.has(normalizedOp)) {
+        issues.push(error(`${path}.op`,
+          `Disallowed operator: "${condition.op}".`,
+          `Use one of: ${[...ALLOWED_OPS].join(', ')}`));
+      }
+    }
+
+    // Value required for most operators
+    if (condition.op && 
+        condition.op.toUpperCase() !== 'IS NULL' && 
+        condition.op.toUpperCase() !== 'IS NOT NULL') {
+      if (condition.value === undefined || condition.value === null) {
+        issues.push(error(`${path}.value`,
+          `HAVING operator "${condition.op}" requires a value.`));
+      }
+    }
+
+    // Logic connector
+    if (condition.logic !== undefined) {
+      if (!['AND', 'OR'].includes(condition.logic)) {
+        issues.push(error(`${path}.logic`,
+          `Invalid logic connector: "${condition.logic}".`,
+          'Use "AND" or "OR".'));
+      }
+    }
+  });
+}
+
 export function validatePlan(plan: QueryPlan): ValidationResult {
   const issues: ValidationIssue[] = [];
   const schema = getSchemaMetadata();
@@ -460,7 +526,7 @@ export function validatePlan(plan: QueryPlan): ValidationResult {
   }
 
   if (plan.having && plan.having.length > 0) {
-    validateWhereConditions(plan.having, issues, schema, plan, 'having');
+    validateHavingConditions(plan.having, issues);
   }
 
   const hasErrors = issues.some(i => i.severity === 'error');

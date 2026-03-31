@@ -15,6 +15,14 @@ import {
 } from './graphParser';
 
 import { 
+  QueryIntent 
+} from './intentTypes';
+
+import { 
+  compileIntent 
+} from './intentCompiler';
+
+import { 
   intentAuditLog 
 } from '../api/audit';
 
@@ -118,6 +126,8 @@ export class IntentEngine {
         const result = await this.generateGraph(messages, systemPrompt);
         graph = result.graph;
         lastRawText = result.rawText;
+        
+        console.log('[DEBUG] generated graph:', JSON.stringify(graph, null, 2));
       } catch (error) {
         if (error instanceof IntentParseError) {
           const correctionResult = await this.correctGraph(messages, error, systemPrompt, schemaMetadata, error.rawText ?? '');
@@ -291,13 +301,38 @@ export class IntentEngine {
 
     const rawText = content.text.trim();
 
-    // Extract JSON from markdown fences if present (robust parsing like interpret.ts)
+    // Extract JSON from markdown fences if present
     let jsonText = rawText;
-    if (rawText.startsWith('```json')) {
-      jsonText = rawText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-    } else if (rawText.startsWith('```')) {
-      jsonText = rawText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    
+    // Try fenced blocks first — take the last one (model self-corrects)
+    const fencedMatches = [
+      ...rawText.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)
+    ];
+    if (fencedMatches.length > 0) {
+      jsonText = fencedMatches[fencedMatches.length - 1][1].trim();
+    } else {
+      // No fences — extract outermost { } block
+      const firstBrace = rawText.indexOf('{');
+      const lastBrace = rawText.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        jsonText = rawText.slice(firstBrace, lastBrace + 1);
+      }
     }
+  
+  // Strip any trailing content after valid JSON
+  // Find the end of the first complete JSON object
+  let depth = 0;
+  let jsonEnd = -1;
+  for (let i = 0; i < jsonText.length; i++) {
+    if (jsonText[i] === '{') depth++;
+    else if (jsonText[i] === '}') {
+      depth--;
+      if (depth === 0) { jsonEnd = i; break; }
+    }
+  }
+  if (jsonEnd !== -1 && jsonEnd < jsonText.length - 1) {
+    jsonText = jsonText.slice(0, jsonEnd + 1);
+  }
 
     // Parse response text as JSON
     let parsed: unknown;
@@ -307,35 +342,19 @@ export class IntentEngine {
       throw new Error(`Failed to parse LLM response as JSON: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 
-    // Check if this is a conversational response (ConversationalPlan)
-    const parsedObj = parsed as Record<string, unknown>;
-    if (parsedObj.needsDb === false && parsedObj.responseMode === 'conversational') {
-      // Create a minimal conversational graph with no database nodes
-      const conversationalGraph: ExecutionGraph = {
-        id: 'conversational-response',
-        label: 'Conversational Response',
-        nodes: [{
-          id: 'conversational',
-          type: 'transform',
-          label: 'Conversational Response',
-          transform: () => 'conversational response'
-        }],
-        edges: [],
-        entryNode: 'conversational'
-      };
-      return { graph: conversationalGraph, rawText };
+    // Validate and parse as QueryIntent
+    const intent = parsed as QueryIntent;
+    
+    // Basic validation for QueryIntent
+    if (!intent.conversational && (!intent.tables || intent.tables.length === 0)) {
+      throw new IntentParseError('QueryIntent must specify tables or be conversational', { intent }, rawText);
     }
 
-    // Parse and validate the graph for database queries
-    try {
-      const graph = parseIntentGraph(parsed);
-      return { graph, rawText };
-    } catch (err) {
-      if (err instanceof IntentParseError) {
-        throw new IntentParseError(err.message, err.details, rawText);
-      }
-      throw err;
-    }
+    // Compile QueryIntent to ExecutionGraph
+    const schema = getSchemaMetadata();
+    const graph = compileIntent(intent, schema);
+    
+    return { graph, rawText };
   }
 
   private async correctGraph(
@@ -356,7 +375,7 @@ export class IntentEngine {
     while (attempts < MAX_CORRECTION_ATTEMPTS) {
       attempts++;
       
-      // Add the assistant's previous bad response to provide context (if we have one)
+      // Add the assistant's previous bad response to provide context
       if (currentRawText) {
         correctedMessages.push({
           role: 'assistant',
@@ -364,22 +383,12 @@ export class IntentEngine {
         });
       }
       
-      // Create correction message with full error details for high-fidelity self-correction
-      const details = currentError.details as any;
-      const llmFeedback = details?.llmFeedback;
+      // Create correction message for QueryIntent
+      const correctionMessage = `The previous QueryIntent had validation errors. Please correct it and return ONLY the corrected QueryIntent JSON.
 
-      const correctionMessage = llmFeedback
-        ? `The previous ExecutionGraph had an invalid QueryPlan in node "${details.nodeId}". Please correct it and return ONLY the corrected JSON ExecutionGraph.
+Error: ${currentError.message}
 
-${llmFeedback}
-
-Return ONLY the corrected JSON ExecutionGraph with no explanations or markdown fences.`
-        : `The previous ExecutionGraph had parsing errors. Please correct them and return ONLY the corrected JSON ExecutionGraph.
-
-Error Details:
-${JSON.stringify(currentError.details, null, 2)}
-
-Return ONLY the corrected JSON ExecutionGraph with no explanations or markdown fences.`;
+Return ONLY the corrected QueryIntent JSON with no explanations or markdown fences.`;
 
       correctedMessages.push({
         role: 'user',
@@ -391,8 +400,8 @@ Return ONLY the corrected JSON ExecutionGraph with no explanations or markdown f
         return { graph: result.graph, attempts }; // Success - no parsing errors
       } catch (parseError) {
         if (parseError instanceof IntentParseError) {
-          currentError = parseError; // Update error with new details
-          currentRawText = parseError.rawText ?? ''; // Read rawText from error
+          currentError = parseError;
+          currentRawText = parseError.rawText ?? '';
           continue; // Try again
         } else {
           throw parseError; // Different error, re-throw
@@ -401,6 +410,6 @@ Return ONLY the corrected JSON ExecutionGraph with no explanations or markdown f
     }
 
     // All attempts failed
-    throw new IntentParseError(`Failed to generate valid ExecutionGraph after ${MAX_CORRECTION_ATTEMPTS} correction attempts`, { attempts: MAX_CORRECTION_ATTEMPTS, lastError: currentError });
+    throw new IntentParseError(`Failed to generate valid QueryIntent after ${MAX_CORRECTION_ATTEMPTS} correction attempts`, { attempts: MAX_CORRECTION_ATTEMPTS, lastError: currentError });
   }
 }
