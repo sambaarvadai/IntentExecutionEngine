@@ -77,6 +77,10 @@ jspm_packages/
 # TypeScript cache
 *.tsbuildinfo
 
+# Build output
+dist/
+build/
+
 # IDE
 .vscode/
 .idea/
