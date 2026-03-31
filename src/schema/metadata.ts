@@ -91,7 +91,7 @@ export function getSchemaMetadata(): SchemaMetadata {
 
   const metadata = {
     tables,
-    allowedAggregations: ['count', 'sum', 'avg', 'min', 'max'],
+    allowedAggregations: ['count', 'countDistinct', 'sum', 'avg', 'min', 'max'],
     allowedOperators: ['=', '!=', '>', '<', '>=', '<=', 'LIKE'],
     maxLimit: 20, // Will be updated from config later
     relationships

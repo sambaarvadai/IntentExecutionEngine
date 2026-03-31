@@ -7,6 +7,7 @@ import { planStore } from '../plans/store';
 import { apiHandler } from '../api/handler';
 import { LLMAdapter } from '../plans';
 import { QueryPlan } from '../plans/types';
+import { IntentEngine } from '../intent';
 
 // Mock LLM adapter for demo purposes
 const mockAdapter: LLMAdapter = {
@@ -85,21 +86,68 @@ async function demo(userPrompt: string) {
   console.log(`PROMPT: "${userPrompt}"`);
   console.log('═══════════════════════════════════════\n');
 
-  const generator = APIGenerator.getInstance();
+  // Create a mock IntentEngine for demo purposes
+  const mockIntentEngine = {
+    async execute(request: any) {
+      // Create a mock plan based on the prompt
+      let mockPlan: any = null;
+      
+      if (request.prompt.toLowerCase().includes('customers')) {
+        mockPlan = {
+          needsDb: true,
+          entity: 'customers',
+          select: ['customers.*'],
+          where: request.prompt.toLowerCase().includes('chennai') 
+            ? [{ field: 'city', operator: '=', value: 'Chennai' }]
+            : []
+        };
+      } else {
+        mockPlan = {
+          needsDb: false,
+          entity: null,
+          select: []
+        };
+      }
+      
+      // Mock execution graph response
+      return {
+        graph: {
+          nodes: [
+            {
+              id: 'mock-entry',
+              type: 'query',
+              plan: mockPlan
+            }
+          ],
+          edges: [],
+          entryNode: 'mock-entry',
+          label: 'Mock Graph'
+        },
+        storedGraphId: 'mock-graph-id'
+      };
+    }
+  } as any;
+
+  const generator = new APIGenerator(mockIntentEngine);
 
   // ── Step 1: Generate API from intent ──────────────────────────
   console.log('① Generating API from intent...');
-  const { api, plan, confidence } = await generator.generateAPI(
-    { intent: userPrompt },
-    mockAdapter
+  const { api, graph, confidence } = await generator.generateAPI(
+    { intent: userPrompt }
   );
   console.log(`   Route    : ${api.method} ${api.route}`);
   console.log(`   Label    : ${api.label}`);
   console.log(`   Confidence: ${(confidence * 100).toFixed(0)}%`);
-  console.log(`   Plan     :`, JSON.stringify(plan, null, 2));
+  
+  // Extract primary plan from graph
+  const plan = graph.nodes.find(n => n.type === 'query')?.plan;
+  
+  if (plan) {
+    console.log(`   Plan     :`, JSON.stringify(plan, null, 2));
+  }
 
   // ── Step 2: Skip registration for conversational plans ───────────────
-  if (!plan.needsDb) {
+  if (!plan?.needsDb) {
     console.log('\n② Result: Conversational — no API registered');
     console.log('\n④ Result:');
     console.log(JSON.stringify({

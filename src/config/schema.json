@@ -27,12 +27,5 @@
         }
       ]
     }
-  },
-  "joins": {
-    "orders.customers": {
-      "from": "orders.customer_id",
-      "to": "customers.id",
-      "type": "left"
-    }
   }
 }

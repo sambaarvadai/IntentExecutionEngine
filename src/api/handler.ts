@@ -20,6 +20,9 @@ import { sanitiseParams } from './sanitise';
 import { rateLimiter } from './rateLimit';
 import { auditLog, type AuditEntry } from './audit';
 import { filterResponse } from './responseFilter';
+import { GraphRuntime } from '../graph/runtime';
+import { ExecutionGraph } from '../graph/types';
+import { graphRepository } from '../graph/store';
 
 // ------------------------------------------------------------------
 // Generic API Request Handler
@@ -51,7 +54,7 @@ export class APIHandler {
           timestamp: new Date(),
           userId: user?.id,
           apiId: api.id,
-          planId: api.planId,
+          planId: api.planId ?? (api as any).storedGraphId ?? '',
           route: api.route,
           method: api.method,
           paramKeys: Object.keys(request.params ?? {}),
@@ -70,7 +73,7 @@ export class APIHandler {
             requestId: requestId,
             apiId: api.id,
             executionTime: Date.now() - startTime,
-            planId: api.planId,
+            planId: api.planId ?? (api as any).storedGraphId ?? '',
             params: request.params ?? {}
           }
         }
@@ -91,16 +94,23 @@ export class APIHandler {
         requestId: requestId
       };
 
-      // 5. Hydrate the plan with parameters
-      const executionContext = await this.hydratePlan(context);
-      
-      // 6. Execute the query
-      const result = await this.executeQuery(executionContext);
+      // 5. Hydrate plan with parameters or execute graph
+      let result: any;
+      if (this.hasExecutionGraph(api)) {
+        result = await this.executeGraph(api, context);
+      } else {
+        const executionContext = await this.hydratePlan(context);
+        result = await this.executeQuery(executionContext);
+      }
       
       console.log('HANDLER dataLabel:', api.dataLabel, 'label:', api.label)
 
       // ADD: Filter response by API label + user roles
-      const filteredResult = filterResponse(result, {
+      const dataForFilter = result.type === 'graph_result' 
+        ? { rows: Array.isArray(result.data) ? result.data : [result.data] }
+        : result.data;
+      
+      const filteredResult = filterResponse(dataForFilter, {
         label: (api.dataLabel ?? 'public') as DataAccessLabel,
         userRoles: user?.roles ?? [],
         sensitiveFields: []
@@ -112,11 +122,13 @@ export class APIHandler {
         timestamp: new Date(),
         userId: user?.id,
         apiId: api.id,
-        planId: api.planId,
+        planId: api.planId ?? (api as any).storedGraphId ?? '',
         route: api.route,
         method: api.method,
         paramKeys: Object.keys(sanitisedParams),
-        resultRowCount: filteredResult?.data?.rows?.length ?? 0,
+        resultRowCount: result?.data?.rows?.length    // query result path
+    ?? result?.data?.length                     // graph result finalOutput array
+    ?? 0,
         executionTimeMs: Date.now() - startTime,
         status: 'success'
       })
@@ -127,14 +139,14 @@ export class APIHandler {
         requestId: requestId,
         apiId: api.id,
         executionTime,
-        planId: api.planId,
+        planId: api.planId ?? (api as any).storedGraphId ?? '',
         params: request.params
       };
       
       // Use filteredResult appropriately based on whether filtering occurred
       const responseData = filteredResult?.filtered
         ? filteredResult
-        : filteredResult?.data
+        : filteredResult;
       
       return {
         success: true,
@@ -203,6 +215,47 @@ export class APIHandler {
   // ------------------------------------------------------------------
   // Step implementations
   // ------------------------------------------------------------------
+
+  private hasExecutionGraph(api: APIDefinition): boolean {
+    return !!(api as any).executionGraph;
+  }
+
+  private getExecutionGraph(api: APIDefinition): ExecutionGraph {
+    return (api as any).executionGraph as ExecutionGraph;
+  }
+
+  private async executeGraph(
+    api: APIDefinition,
+    context: RequestContext
+  ): Promise<any> {
+    const graph = this.getExecutionGraph(api);
+
+    // Inject incoming params into query node plans inside the graph
+    // Deep clone to avoid mutating the stored graph
+    const hydratedGraph: ExecutionGraph = JSON.parse(JSON.stringify(graph));
+    
+    for (const node of hydratedGraph.nodes) {
+      if (node.type === 'query' && node.plan) {
+        this.injectParameters(node.plan, context.incomingParams);
+      }
+    }
+
+    // Execute via GraphRuntime
+    const runtime = new GraphRuntime();
+    const result = await runtime.execute(hydratedGraph, {
+      maxParallelNodes: 5,
+      dryRun: false
+    });
+
+    return {
+      type: 'graph_result',
+      success: result.success,
+      data: result.finalOutput,
+      nodeResults: Object.fromEntries(result.nodeResults),
+      totalExecutionTime: result.totalExecutionTime,
+      failedNode: result.failedNode ?? null
+    };
+  }
 
   private async loadAPI(apiId: string): Promise<APIDefinition> {
     return apiRegistry.get(apiId);

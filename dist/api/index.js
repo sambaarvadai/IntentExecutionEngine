@@ -3,7 +3,8 @@
 // API Module Public Interface
 // ------------------------------------------------------------------
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.stripFields = exports.filterResponse = exports.auditLog = exports.AuditLog = exports.rateLimiter = exports.RateLimiter = exports.sanitiseParams = exports.sanitiseArray = exports.sanitiseBoolean = exports.sanitiseNumber = exports.sanitiseString = exports.apiGenerator = exports.APIGenerator = exports.planHydrator = exports.PlanHydrator = exports.apiHandler = exports.APIHandler = exports.apiRegistry = exports.APIRegistryManager = void 0;
+exports.routers = exports.createRouter = exports.graphRouter = exports.stripFields = exports.filterResponse = exports.auditLog = exports.AuditLog = exports.rateLimiter = exports.RateLimiter = exports.sanitiseParams = exports.sanitiseArray = exports.sanitiseBoolean = exports.sanitiseNumber = exports.sanitiseString = exports.apiGenerator = exports.APIGenerator = exports.planHydrator = exports.PlanHydrator = exports.apiHandler = exports.APIHandler = exports.apiRegistry = exports.APIRegistryManager = void 0;
+exports.registerRoutes = registerRoutes;
 // Registry - only public operations
 var registry_1 = require("./registry");
 Object.defineProperty(exports, "APIRegistryManager", { enumerable: true, get: function () { return registry_1.APIRegistryManager; } });
@@ -39,6 +40,38 @@ Object.defineProperty(exports, "auditLog", { enumerable: true, get: function () 
 var responseFilter_1 = require("./responseFilter");
 Object.defineProperty(exports, "filterResponse", { enumerable: true, get: function () { return responseFilter_1.filterResponse; } });
 Object.defineProperty(exports, "stripFields", { enumerable: true, get: function () { return responseFilter_1.stripFields; } });
+// Routes - only public interface
+var graphs_1 = require("./routes/graphs");
+Object.defineProperty(exports, "graphRouter", { enumerable: true, get: function () { return graphs_1.graphRouter; } });
+Object.defineProperty(exports, "createRouter", { enumerable: true, get: function () { return graphs_1.createRouter; } });
+// ------------------------------------------------------------------
+// Route Registration
+// ------------------------------------------------------------------
+const graphs_2 = require("./routes/graphs");
+// Export all registered routers for easy access
+exports.routers = {
+    graphs: graphs_2.graphRouter,
+};
+// Export a function to register all routes with a web framework
+function registerRoutes(app) {
+    // Simple Express-style registration
+    if (app.use && typeof app.use === 'function') {
+        // Register graph routes under /api prefix
+        app.use('/api', (req, res, next) => {
+            const path = req.path;
+            const method = req.method.toUpperCase();
+            // Find matching route
+            for (const [routeKey, { handler }] of graphs_2.graphRouter.routes) {
+                const [routeMethod, routePath] = routeKey.split(':');
+                if (routeMethod === method && path === routePath) {
+                    return handler(req, res);
+                }
+            }
+            next();
+        });
+    }
+    return exports.routers;
+}
 // Note: Other modules should only import from this index.ts file
 // No direct imports from internal files allowed (rule #2)
 //# sourceMappingURL=index.js.map

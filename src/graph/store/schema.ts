@@ -22,7 +22,8 @@ export function ensureGraphStoreSchema(db: Database): void {
       approval_note   TEXT,
       node_count      INTEGER NOT NULL DEFAULT 0,
       success         INTEGER NOT NULL DEFAULT 1,  -- SQLite boolean
-      error_message   TEXT
+      error_message   TEXT,
+      prompt_embedding BLOB                       -- Optional embedding vector
     );
   `);
 

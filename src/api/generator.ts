@@ -10,7 +10,8 @@ import {
   AuthConfig
 } from '../context/types';
 import { QueryPlan, AnyPlan } from '../plans/types';
-import { buildQueryPipeline, LLMAdapter } from '../plans';
+import { ExecutionGraph } from '../graph/types';
+import { IntentEngine } from '../intent';
 
 // ------------------------------------------------------------------
 // API Generator - Creates API definitions from natural language
@@ -23,9 +24,10 @@ export interface APIGeneratorConfig {
 }
 
 export class APIGenerator {
-  private config: APIGeneratorConfig;
-
-  constructor(config: APIGeneratorConfig = {}) {
+  constructor(
+    private intentEngine: IntentEngine,
+    private config: APIGeneratorConfig = {}
+  ) {
     this.config = {
       defaultAuth: { type: 'none', required: false },
       defaultConstraints: {
@@ -43,33 +45,45 @@ export class APIGenerator {
   // Main generation method
   // ------------------------------------------------------------------
 
-  async generateAPI(request: GenerationRequest, llm: LLMAdapter): Promise<GenerationResult> {
+  async generateAPI(
+    request: GenerationRequest
+  ): Promise<GenerationResult> {
     const constraints = { ...this.config.defaultConstraints, ...request.constraints };
     
     try {
-      // Step 1: Generate the base QueryPlan
-      const planResult = await this.generateQueryPlan(request.intent, llm);
+      // Step 1: Generate ExecutionGraph via intent engine
+      const { graph, storedGraphId } = await this.generateExecutionGraph(
+        request.intent
+      );
       
-      // Step 2: Generate API definition
-      const api = await this.generateAPIDefinition(planResult.plan, request, constraints);
+      // Step 2: Extract primary plan for metadata derivation
+      const primaryPlan = this.getPrimaryQueryPlan(graph);
       
-      // Step 3: Generate request examples
-      const examples = await this.generateExamples(api, planResult.plan, request);
+      // Step 3: Generate API metadata (unchanged — still uses primaryPlan)
+      const api = await this.generateAPIDefinition(
+        primaryPlan, graph, request, constraints
+      );
       
-      // Step 4: Create final API definition
+      // Step 4: Generate examples from primary plan
+      const examples = await this.generateExamples(api, primaryPlan, request);
+      
+      // Step 5: Build final APIDefinition
       const finalAPI: APIDefinition = {
-        id: '', // Will be set when saved
+        id: '',
         ...api,
         examples,
+        executionGraph: graph,          // ← store full graph
+        generatingPrompts: [request.intent],
+        createdFrom: 'intent',
+        storedGraphId,                  // ← reference to graph store
         createdAt: new Date(),
         updatedAt: new Date()
       };
 
       return {
         api: finalAPI,
-        plan: planResult.plan,
-        confidence: this.calculateConfidence(planResult, finalAPI),
-        alternatives: [] // Could be implemented for multiple options
+        graph,                          // ← replace plan with graph
+        confidence: this.calculateConfidence(graph, finalAPI)
       };
 
     } catch (error) {
@@ -81,52 +95,49 @@ export class APIGenerator {
   // Step implementations
   // ------------------------------------------------------------------
 
-  private async generateQueryPlan(intent: string, llm: LLMAdapter): Promise<{ plan: QueryPlan; confidence: number }> {
-    try {
-      const pipelineResult = await buildQueryPipeline(intent, llm);
-      
-      // Extract the original plan from the pipeline, not the compiled result
-      // The pipeline should expose the original plan that was validated
-      const originalPlan = this.extractOriginalPlanFromPipeline(pipelineResult);
-      
-      return {
-        plan: originalPlan,
-        confidence: this.calculatePlanConfidence(pipelineResult)
-      };
-    } catch (error) {
-      throw new Error(`Query plan generation failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
+  private async generateExecutionGraph(
+    intent: string
+  ): Promise<{ graph: ExecutionGraph; storedGraphId: string }> {
+    const result = await this.intentEngine.execute({
+      prompt: intent,
+      options: { dryRun: false }
+    });
+    return { 
+      graph: result.graph, 
+      storedGraphId: result.storedGraphId 
+    };
   }
 
-  private extractOriginalPlanFromPipeline(pipelineResult: any): QueryPlan {
-    // The pipeline now exposes the original validated plan
-    if (pipelineResult.originalPlan) {
-      return pipelineResult.originalPlan;
+  private getPrimaryQueryPlan(graph: ExecutionGraph): QueryPlan | null {
+    const entryNode = graph.nodes.find(n => n.id === graph.entryNode);
+    if (entryNode?.type === 'query' && entryNode.plan) {
+      return entryNode.plan;
     }
-    
-    throw new Error('Pipeline does not expose original QueryPlan');
+    const firstQuery = graph.nodes.find(n => n.type === 'query');
+    return firstQuery?.plan ?? null;
   }
 
   private async generateAPIDefinition(
-    plan: QueryPlan, 
-    request: GenerationRequest, 
+    plan: QueryPlan | null,    // ← now nullable
+    graph: ExecutionGraph,     // ← new param
+    request: GenerationRequest,
     constraints: GenerationConstraints
   ): Promise<Omit<APIDefinition, 'id' | 'createdAt' | 'updatedAt' | 'examples'>> {
     
     // Generate route based on the plan's entity and purpose
-    const route = this.generateRoute(plan, request.intent);
+    const route = this.generateRoute(plan, request.intent, graph);
     
     // Determine HTTP method
     const method = this.determineMethod(plan, constraints);
     
     // Generate label
-    const label = this.generateLabel(plan, request.intent);
+    const label = this.generateLabel(plan, request.intent, graph);
     
     // Extract parameters from the plan
     const params = this.extractParameters(plan);
     
     // Generate description
-    const description = this.generateDescription(plan, request.intent);
+    const description = this.generateDescription(plan, request.intent, graph);
     
     // Determine authentication requirements
     const auth = this.determineAuth(plan, constraints);
@@ -139,13 +150,14 @@ export class APIGenerator {
       label,
       auth,
       params,
-      description
+      description,
+      nodeCount: graph.nodes.length
     };
   }
 
   private async generateExamples(
     api: Omit<APIDefinition, 'id' | 'createdAt' | 'updatedAt' | 'examples'>,
-    plan: QueryPlan,
+    plan: QueryPlan | null,
     request: GenerationRequest
   ): Promise<RequestExample[]> {
     const examples: RequestExample[] = [];
@@ -180,9 +192,9 @@ export class APIGenerator {
     return Array.isArray(plan.aggregate) ? plan.aggregate[0] : plan.aggregate;
   }
 
-  private generateRoute(plan: QueryPlan, intent: string): string {
-    if (!plan.entity) {
-      return '/query';
+  private generateRoute(plan: QueryPlan | null, intent: string, graph?: ExecutionGraph): string {
+    if (!plan?.entity) {
+      return graph?.label ? `/${graph.label.toLowerCase().replace(/\s+/g, '-')}` : '/query';
     }
 
     const entity = plan.entity.toLowerCase();
@@ -210,8 +222,12 @@ export class APIGenerator {
     }
   }
 
-  private determineMethod(plan: QueryPlan, constraints: GenerationConstraints): 'GET' | 'POST' | 'PUT' | 'DELETE' {
+  private determineMethod(plan: QueryPlan | null, constraints: GenerationConstraints): 'GET' | 'POST' | 'PUT' | 'DELETE' {
     const allowedMethods = constraints.allowedMethods || ['GET', 'POST'];
+    
+    if (!plan) {
+      return allowedMethods.includes('GET') ? 'GET' : 'POST';
+    }
     
     // For data retrieval, GET is most appropriate
     if (plan.needsDb && !this.getFirstAggregate(plan)) {
@@ -227,8 +243,12 @@ export class APIGenerator {
     return allowedMethods.includes('POST') ? 'POST' : 'GET';
   }
 
-  private generateLabel(plan: QueryPlan, intent: string): string {
-    const entity = plan.entity || 'data';
+  private generateLabel(plan: QueryPlan | null, intent: string, graph?: ExecutionGraph): string {
+    if (!plan?.entity) {
+      return graph?.label || 'Query Data';
+    }
+    
+    const entity = plan.entity;
     
     const aggregate = this.getFirstAggregate(plan);
     if (aggregate) {
@@ -247,7 +267,11 @@ export class APIGenerator {
     return `List ${entity}`;
   }
 
-  private extractParameters(plan: QueryPlan): ParameterDefinition[] {
+  private extractParameters(plan: QueryPlan | null): ParameterDefinition[] {
+    if (!plan) {
+      return [];
+    }
+    
     const params: ParameterDefinition[] = [];
 
     // Extract parameters from WHERE conditions
@@ -317,10 +341,15 @@ export class APIGenerator {
     return 'string';
   }
 
-  private generateDescription(plan: QueryPlan, intent: string): string {
-    const entity = plan.entity || 'data';
+  private generateDescription(plan: QueryPlan | null, intent: string, graph?: ExecutionGraph): string {
+    const entity = plan?.entity || (graph?.label ? graph.label.toLowerCase() : 'data');
     
     let description = `API endpoint for ${intent.toLowerCase()}`;
+    
+    if (!plan) {
+      description += `. Processes ${graph?.label || 'request'}`;
+      return description;
+    }
     
     const aggregate = this.getFirstAggregate(plan);
     if (aggregate) {
@@ -334,7 +363,7 @@ export class APIGenerator {
     return description;
   }
 
-  private determineAuth(plan: QueryPlan, constraints: GenerationConstraints): AuthConfig {
+  private determineAuth(plan: QueryPlan | null, constraints: GenerationConstraints): AuthConfig {
     if (constraints.authRequired) {
       return {
         type: 'api_key',
@@ -370,8 +399,8 @@ export class APIGenerator {
     return params;
   }
 
-  private generateExampleResponse(plan: QueryPlan): any {
-    if (!plan.needsDb) {
+  private generateExampleResponse(plan: QueryPlan | null): any {
+    if (!plan?.needsDb) {
       return {
         type: 'conversational',
         message: 'This is a conversational response'
@@ -398,7 +427,7 @@ export class APIGenerator {
 
   private generateVariationExample(
     api: Omit<APIDefinition, 'id' | 'createdAt' | 'updatedAt' | 'examples'>,
-    plan: QueryPlan
+    plan: QueryPlan | null
   ): RequestExample | null {
     if (!api.params || api.params.length === 0) {
       return null;
@@ -441,49 +470,17 @@ export class APIGenerator {
   // Confidence calculation
   // ------------------------------------------------------------------
 
-  private calculateConfidence(planResult: any, api: APIDefinition): number {
-    // Simple confidence calculation based on validation and complexity
-    let confidence = 0.8; // Base confidence
-    
-    // Adjust based on plan validation
-    if (planResult.finalValidation && planResult.finalValidation.valid) {
-      confidence += 0.1;
-    }
-    
-    // Adjust based on API complexity
-    if (api.params && api.params.length > 5) {
-      confidence -= 0.1; // More complex APIs are less certain
-    }
-    
+  private calculateConfidence(
+    graph: ExecutionGraph, 
+    api: APIDefinition
+  ): number {
+    let confidence = 0.8;
+    // More nodes = more complexity = slightly less confident
+    if (graph.nodes.length > 5) confidence -= 0.1;
+    if (graph.nodes.length > 10) confidence -= 0.1;
+    if (api.params && api.params.length > 5) confidence -= 0.1;
     return Math.min(Math.max(confidence, 0), 1);
-  }
-
-  private calculatePlanConfidence(pipelineResult: any): number {
-    if (!pipelineResult.finalValidation.valid) {
-      return 0.3;
-    }
-    
-    const issueCount = pipelineResult.finalValidation.issues.length;
-    if (issueCount === 0) {
-      return 0.9;
-    }
-    
-    return Math.max(0.9 - (issueCount * 0.1), 0.5);
-  }
-
-  // ------------------------------------------------------------------
-  // Singleton instance
-  // ------------------------------------------------------------------
-
-  private static instance: APIGenerator;
-
-  static getInstance(config?: APIGeneratorConfig): APIGenerator {
-    if (!APIGenerator.instance) {
-      APIGenerator.instance = new APIGenerator(config);
-    }
-    return APIGenerator.instance;
   }
 }
 
-// Export singleton instance for easy access
-export const apiGenerator = APIGenerator.getInstance();
+  

@@ -6,6 +6,9 @@ import { graphRepository } from '../../graph/store';
 import { GraphStatus, StoredGraph } from '../../graph/store/types';
 import { GraphRuntime } from '../../graph/runtime';
 import { ExecutionGraph } from '../../graph/types';
+import { IntentEngine } from '../../intent';
+import { IntentParseError } from '../../intent';
+import Anthropic from '@anthropic-ai/sdk';
 
 // ------------------------------------------------------------------
 // Route Handler Types (simple Express-like interface)
@@ -166,6 +169,57 @@ graphRouter.post('/graphs/:id/execute', async (req: any, res: any) => {
       return res.status(404).json({ error: 'Graph not found' });
     }
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
+// POST /graphs/validate
+graphRouter.post('/graphs/validate', async (req: any, res: any) => {
+  try {
+    const { prompt, context } = req.body;
+    
+    // Validate request body
+    if (!prompt || typeof prompt !== 'string') {
+      return res.status(400).json({ 
+        error: 'Prompt is required and must be a string' 
+      });
+    }
+    
+    // Construct IntentRequest with dryRun: true
+    const intentRequest = {
+      prompt,
+      context,
+      options: { dryRun: true }
+    };
+    
+    // Execute using IntentEngine
+    const anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY || ''
+    });
+    const engine = new IntentEngine(anthropic);
+    const result = await engine.execute(intentRequest);
+    
+    // Return validation response
+    res.json({
+      graphId: result.storedGraphId,
+      graph: result.graph,
+      generationMs: result.generationMs,
+      valid: true,
+      nodeCount: result.graph.nodes.length
+    });
+  } catch (error) {
+    if (error instanceof IntentParseError) {
+      // Return 422 for IntentParseError
+      return res.status(422).json({
+        valid: false,
+        error: error.message,
+        details: error.details
+      });
+    }
+    
+    // Return 500 for any other error
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    });
   }
 });
 

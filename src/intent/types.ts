@@ -26,6 +26,8 @@ export interface IntentResult {
   executionMs: number;
   prompt: string;
   storedGraphId: string;
+  cacheHit?: boolean;
+  cacheScore?: number;
 }
 
 export interface IntentParseResult {

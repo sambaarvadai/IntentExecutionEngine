@@ -2,6 +2,8 @@
 // API Layer Types - Stage 2
 // ------------------------------------------------------------------
 
+import { ExecutionGraph } from '../graph/types';
+
 export interface APIDefinition {
   id: string;
   route: string;
@@ -16,6 +18,11 @@ export interface APIDefinition {
   examples?: RequestExample[];
   createdAt: Date;
   updatedAt: Date;
+  executionGraph?: ExecutionGraph;     // present for intent-generated APIs
+  generatingPrompts?: string[];
+  createdFrom?: 'manual' | 'intent';
+  storedGraphId?: string;              // reference to graph store entry
+  nodeCount?: number;                   // number of nodes in execution graph
 }
 
 export type APIStatus = 'GENERATED' | 'DRAFT' | 'REVIEW' | 'ACTIVE' | 'DEPRECATED';
@@ -94,7 +101,8 @@ export interface GenerationConstraints {
 
 export interface GenerationResult {
   api: APIDefinition;
-  plan: any; // QueryPlan
+  graph: ExecutionGraph;
+  storedGraphId?: string;
   confidence: number;
   alternatives?: APIDefinition[];
 }

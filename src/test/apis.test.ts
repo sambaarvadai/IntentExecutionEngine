@@ -31,7 +31,7 @@ const mockCreateSearchService = createSearchService as jest.MockedFunction<typeo
 const mockSearchService = mockCreateSearchService.mock.results[0].value as any;
 
 // Mock the registry
-jest.mock('../registry', () => ({
+jest.mock('../api/registry', () => ({
   apiRegistry: {
     updateStatus: jest.fn(),
     get: jest.fn()

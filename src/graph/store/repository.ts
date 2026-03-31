@@ -44,8 +44,8 @@ export class GraphRepository {
       INSERT INTO stored_graphs (
         id, prompt, graph_json, status, created_at, updated_at,
         generation_ms, execution_ms, execution_count, last_used_at,
-        approved_by, approval_note, node_count, success, error_message
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        approved_by, approval_note, node_count, success, error_message, prompt_embedding
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       id,
       input.prompt,
@@ -61,7 +61,8 @@ export class GraphRepository {
       null, // approval_note
       nodeCount,
       input.success ? 1 : 0, // SQLite boolean
-      input.errorMessage || null
+      input.errorMessage || null,
+      input.promptEmbedding || null
     );
     
     // Return the full StoredGraph
@@ -78,7 +79,7 @@ export class GraphRepository {
       SELECT 
         id, prompt, graph_json, status, created_at, updated_at,
         generation_ms, execution_ms, execution_count, last_used_at,
-        approved_by, approval_note, node_count, success, error_message
+        approved_by, approval_note, node_count, success, error_message, prompt_embedding
       FROM stored_graphs 
       WHERE id = ?
     `, id);
@@ -112,6 +113,23 @@ export class GraphRepository {
     return result;
   }
 
+  async updatePromptEmbedding(id: string, embedding: Buffer): Promise<StoredGraph> {
+    const db = await getGraphDatabase();
+    const now = Date.now();
+    
+    await db.run(`
+      UPDATE stored_graphs 
+      SET prompt_embedding = ?, updated_at = ?
+      WHERE id = ?
+    `, embedding, now, id);
+    
+    const result = await this.findById(id);
+    if (!result) {
+      throw new Error(`Graph not found: ${id}`);
+    }
+    return result;
+  }
+
   async incrementUsage(id: string): Promise<void> {
     const db = await getGraphDatabase();
     const now = Date.now();
@@ -131,7 +149,7 @@ export class GraphRepository {
       SELECT 
         id, prompt, graph_json, status, created_at, updated_at,
         generation_ms, execution_ms, execution_count, last_used_at,
-        approved_by, approval_note, node_count, success, error_message
+        approved_by, approval_note, node_count, success, error_message, prompt_embedding
       FROM stored_graphs
     `;
     
@@ -219,7 +237,8 @@ export class GraphRepository {
       approvalNote: row.approval_note,
       nodeCount: row.node_count,
       success: row.success === 1, // Convert SQLite integer boolean
-      errorMessage: row.error_message
+      errorMessage: row.error_message,
+      promptEmbedding: row.prompt_embedding || null
     };
   }
 }

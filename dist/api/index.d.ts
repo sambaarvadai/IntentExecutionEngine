@@ -6,4 +6,11 @@ export { sanitiseString, sanitiseNumber, sanitiseBoolean, sanitiseArray, sanitis
 export { RateLimiter, rateLimiter, } from './rateLimit';
 export { AuditLog, auditLog, } from './audit';
 export { filterResponse, stripFields, } from './responseFilter';
+export { graphRouter, createRouter, type Router, type RouteHandler, } from './routes/graphs';
+export declare const routers: {
+    graphs: import("./routes/graphs").Router;
+};
+export declare function registerRoutes(app: any): {
+    graphs: import("./routes/graphs").Router;
+};
 //# sourceMappingURL=index.d.ts.map

@@ -22,6 +22,7 @@ export interface StoredGraph {
   nodeCount: number;           // denormalized for quick stats
   success: boolean;            // did the last execution succeed
   errorMessage: string | null; // if success is false
+  promptEmbedding: Buffer | null; // Optional embedding vector as binary data
 }
 
 export interface CreateGraphInput {
@@ -31,6 +32,7 @@ export interface CreateGraphInput {
   executionMs: number;
   success: boolean;
   errorMessage?: string;
+  promptEmbedding?: Buffer;    // Optional embedding vector
 }
 
 export interface UpdateGraphStatusInput {
@@ -38,6 +40,11 @@ export interface UpdateGraphStatusInput {
   status: GraphStatus;
   approvedBy?: string;
   approvalNote?: string;
+}
+
+export interface UpdatePromptEmbeddingInput {
+  id: string;
+  embedding: Buffer;
 }
 
 export interface StoreQuery {

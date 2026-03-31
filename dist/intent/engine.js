@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.IntentEngine = void 0;
 const graphParser_1 = require("./graphParser");
 const audit_1 = require("../api/audit");
+const store_1 = require("../graph/store");
 const graphParser_2 = require("./graphParser");
 const promptBuilder_1 = require("./promptBuilder");
 const metadata_1 = require("../schema/metadata");
@@ -64,10 +65,18 @@ class IntentEngine {
                     correctionAttempts,
                     dryRun: true
                 });
+                // Save the graph for dry runs
+                const stored = await store_1.graphRepository.save({
+                    prompt: request.prompt,
+                    graph,
+                    generationMs,
+                    executionMs: 0,
+                    success: true
+                });
                 return {
                     graph,
                     result: {
-                        graphId: graph.id,
+                        graphId: stored.id,
                         success: true,
                         nodeResults: new Map(),
                         finalOutput: null,
@@ -75,7 +84,8 @@ class IntentEngine {
                     },
                     generationMs,
                     executionMs: 0,
-                    prompt: request.prompt
+                    prompt: request.prompt,
+                    storedGraphId: stored.id
                 };
             }
             // Step 4: Execute the graph
@@ -103,12 +113,25 @@ class IntentEngine {
                 correctionAttempts,
                 dryRun: false
             });
+            // Save the executed graph
+            const stored = await store_1.graphRepository.save({
+                prompt: request.prompt,
+                graph,
+                generationMs,
+                executionMs,
+                success: result.success,
+                errorMessage: result.success ? undefined :
+                    (result.failedNode
+                        ? `Failed at node: ${result.failedNode}`
+                        : 'Unknown error')
+            });
             return {
                 graph,
                 result,
                 generationMs,
                 executionMs,
-                prompt: request.prompt
+                prompt: request.prompt,
+                storedGraphId: stored.id
             };
         }
         catch (error) {

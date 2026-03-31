@@ -15,6 +15,7 @@ export interface IntentResult {
     generationMs: number;
     executionMs: number;
     prompt: string;
+    storedGraphId: string;
 }
 export interface IntentParseResult {
     graph: ExecutionGraph;

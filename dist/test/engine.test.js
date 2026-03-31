@@ -7,6 +7,23 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const engine_1 = require("../intent/engine");
 const graphParser_1 = require("../intent/graphParser");
 const sdk_1 = __importDefault(require("@anthropic-ai/sdk"));
+// Mock the graph database
+jest.mock('../graph/store/db', () => ({
+    getGraphDatabase: jest.fn()
+}));
+// Mock the graph store
+jest.mock('../graph/store', () => ({
+    graphRepository: {
+        save: jest.fn(),
+        findById: jest.fn(),
+        updateStatus: jest.fn(),
+        incrementUsage: jest.fn(),
+        query: jest.fn(),
+        stats: jest.fn()
+    }
+}));
+const db_1 = require("../graph/store/db");
+const store_1 = require("../graph/store");
 // Mock the Anthropic SDK
 jest.mock('@anthropic-ai/sdk');
 const MockedAnthropic = sdk_1.default;
@@ -33,6 +50,10 @@ jest.mock('../config', () => ({
         llm: {
             model: 'claude-opus-4-6',
             maxTokens: 4096
+        },
+        database: {
+            path: './test-data',
+            filename: 'test.db'
         }
     })
 }));
@@ -40,9 +61,34 @@ describe('IntentEngine', () => {
     let engine;
     let mockMessages;
     let mockCreate;
-    beforeEach(() => {
+    beforeEach(async () => {
         // Reset mocks
         jest.clearAllMocks();
+        // Mock getGraphDatabase function (not really needed since we mock the repository)
+        db_1.getGraphDatabase.mockResolvedValue({});
+        // Set up graphRepository mocks
+        store_1.graphRepository.save.mockResolvedValue({
+            id: 'test-graph-id',
+            prompt: 'test prompt',
+            graphJson: '{"id":"test"}',
+            status: 'draft',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            generationMs: 100,
+            executionMs: 200,
+            executionCount: 0,
+            lastUsedAt: null,
+            approvedBy: null,
+            approvalNote: null,
+            nodeCount: 1,
+            success: true,
+            errorMessage: null
+        });
+        store_1.graphRepository.findById.mockResolvedValue(null);
+        store_1.graphRepository.updateStatus.mockResolvedValue({});
+        store_1.graphRepository.incrementUsage.mockResolvedValue(undefined);
+        store_1.graphRepository.query.mockResolvedValue([]);
+        store_1.graphRepository.stats.mockResolvedValue({ total: 0, byStatus: { draft: 0, approved: 0, rejected: 0, deprecated: 0 } });
         // Create mock Anthropic instance
         const mockAnthropicInstance = {
             messages: {
@@ -53,6 +99,9 @@ describe('IntentEngine', () => {
         mockCreate = mockAnthropicInstance.messages.create;
         mockMessages = mockAnthropicInstance.messages;
         engine = new engine_1.IntentEngine(mockAnthropicInstance);
+    });
+    afterEach(async () => {
+        // No database cleanup needed since we're mocking the repository
     });
     describe('execute', () => {
         const validGraphJSON = {

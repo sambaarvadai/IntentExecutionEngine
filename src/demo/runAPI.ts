@@ -5,6 +5,8 @@ import { APIGenerator } from '../api/generator';
 import { apiRegistry } from '../api/registry';
 import { planStore } from '../plans/store';
 import { apiHandler } from '../api/handler';
+import { IntentEngine } from '../intent';
+import Anthropic from '@anthropic-ai/sdk';
 
 async function demo(userPrompt: string) {
   console.log('\n═══════════════════════════════════════');
@@ -12,21 +14,32 @@ async function demo(userPrompt: string) {
   console.log('═══════════════════════════════════════\n');
 
   const llm = new AnthropicAdapter();
-  const generator = APIGenerator.getInstance();
+  
+  // Initialize IntentEngine with Anthropic client
+  const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY
+  });
+  const intentEngine = new IntentEngine(anthropic);
+  const generator = new APIGenerator(intentEngine);
 
   // ── Step 1: Generate API from intent ──────────────────────────
   console.log('① Generating API from intent...');
-  const { api, plan, confidence } = await generator.generateAPI(
-    { intent: userPrompt },
-    llm
+  const { api, graph, confidence } = await generator.generateAPI(
+    { intent: userPrompt }
   );
   console.log(`   Route    : ${api.method} ${api.route}`);
   console.log(`   Label    : ${api.label}`);
   console.log(`   Confidence: ${(confidence * 100).toFixed(0)}%`);
-  console.log(`   Plan     :`, JSON.stringify(plan, null, 2));
+  
+  // Extract primary plan from graph
+  const plan = graph.nodes.find(n => n.type === 'query')?.plan;
+  
+  if (plan) {
+    console.log(`   Plan     :`, JSON.stringify(plan, null, 2));
+  }
 
   // ── Step 2: Skip registration for conversational plans ───────────────
-  if (!plan.needsDb) {
+  if (!plan?.needsDb) {
     console.log('\n② Result: Conversational — no API registered');
     console.log('\n④ Result:');
     console.log(JSON.stringify({

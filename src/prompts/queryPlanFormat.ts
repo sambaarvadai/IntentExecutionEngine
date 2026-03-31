@@ -23,13 +23,8 @@ QUERYPLAN FORMAT:
     }
   ],
   "limit": number,
-  "joins": [
-    {
-      "table": "table_name",
-      "on": "table1.field = table2.field",
-      "type": "INNER" or "LEFT" or "RIGHT"
-    }
-  ]
+  "join": ["table2"] or [{"table": "table2", "type": "LEFT"}]
+  IMPORTANT: The field name is "join" (singular), never "joins"
 }
 
 IMPORTANT: 
@@ -39,8 +34,8 @@ IMPORTANT:
 - where clause supports all standard SQL operators
 - orderBy is optional, defaults to entity primary key
 - limit is optional, defaults to maxLimit from schema
-- joins are optional for related table queries
-- For joins, include the joined table in the join array
+- join are optional for related table queries
+- For join, include the joined table in the join array
 - Always qualify field names with their table: "table_name.column_name" not just "column_name"
 - For date filters, use ISO 8601 format strings. Never use relative expressions like 'last week'.
 `;
