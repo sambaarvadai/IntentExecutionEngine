@@ -174,7 +174,7 @@ function validateWhereConditions(
       }
       
       if (!fieldFound) {
-        issues.push(warning(`${path}.field`, `Column "${condition.field}" not found in available tables.`, `Available columns: ${Object.keys(availableColumns).join(', ')}`));
+        issues.push(error(`${path}.field`, `Column "${condition.field}" not found in available tables.`, `Available columns: ${Object.keys(availableColumns).join(', ')}`));
       }
     }
 
