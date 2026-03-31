@@ -3,6 +3,7 @@
 import { IntentEngine } from '../intent/engine';
 import { IntentParseError } from '../intent/graphParser';
 import { ExecutionGraph, GraphResult } from '../graph/types';
+import { APISearchService } from '../search';
 import Anthropic from '@anthropic-ai/sdk';
 import { open, Database } from 'sqlite';
 import sqlite3 from 'sqlite3';
@@ -24,6 +25,11 @@ jest.mock('../graph/store', () => ({
   }
 }));
 
+// Mock APISearchService
+jest.mock('../search', () => ({
+  APISearchService: jest.fn()
+}));
+
 import { getGraphDatabase } from '../graph/store/db';
 import { graphRepository } from '../graph/store';
 
@@ -40,7 +46,20 @@ jest.mock('../schema/metadata', () => ({
           'customers.id': { type: 'integer', filterable: true, selectable: true, sortable: true },
           'customers.name': { type: 'text', filterable: true, selectable: true, sortable: true },
           'customers.status': { type: 'text', filterable: true, selectable: true, sortable: true }
+        },
+        joins: {
+          'orders': 'customers.id = orders.customer_id'
         }
+      },
+      orders: {
+        fields: {
+          'orders.id': { type: 'integer', filterable: true, selectable: true, sortable: true },
+          'orders.customer_id': { type: 'integer', filterable: true, selectable: true, sortable: true },
+          'orders.item': { type: 'text', filterable: true, selectable: true, sortable: true },
+          'orders.amount': { type: 'real', filterable: true, selectable: true, sortable: true },
+          'orders.created_at': { type: 'text', filterable: true, selectable: true, sortable: true }
+        },
+        joins: undefined
       }
     },
     allowedAggregations: ['count', 'sum', 'avg', 'min', 'max'],
@@ -67,6 +86,7 @@ describe('IntentEngine', () => {
   let engine: IntentEngine;
   let mockMessages: any;
   let mockCreate: jest.MockedFunction<any>;
+  let mockAnthropicInstance: any;
 
   beforeEach(async () => {
     // Reset mocks
@@ -304,6 +324,142 @@ describe('IntentEngine', () => {
     });
   });
 
+  describe('maxNodes enforcement', () => {
+    const validGraphJSON = {
+      id: 'test-graph',
+      label: 'Test Graph',
+      entryNode: 'fetch-customers',
+      nodes: [
+        {
+          id: 'fetch-customers',
+          type: 'query',
+          label: 'Fetch Customers',
+          plan: {
+            needsDb: true,
+            entity: 'customers',
+            select: ['customers.*']
+          }
+        }
+      ],
+      edges: []
+    };
+
+    it('throws IntentParseError when graph exceeds default maxNodes', async () => {
+      // Create a graph with 11 nodes (one over default of 10)
+      const largeGraphJSON = {
+        ...validGraphJSON,
+        nodes: Array.from({ length: 11 }, (_, i) => ({
+          id: `node-${i}`,
+          type: 'query',
+          label: `Node ${i}`,
+          plan: {
+            needsDb: true,
+            entity: 'customers',
+            select: ['customers.*']
+          }
+        }))
+      };
+
+      mockCreate.mockResolvedValue({
+        content: [{
+          type: 'text',
+          text: JSON.stringify(largeGraphJSON)
+        }]
+      });
+
+      const request = {
+        prompt: 'Generate a large graph',
+        options: {} // No maxNodes specified, should use default of 10
+      };
+
+      await expect(engine.execute(request)).rejects.toThrow(IntentParseError);
+      
+      try {
+        await engine.execute(request);
+      } catch (error: any) {
+        expect(error).toBeInstanceOf(IntentParseError);
+        expect(error.message).toContain('exceeds');
+        expect(error.details.nodeCount).toBe(11);
+        expect(error.details.maxNodes).toBe(10);
+        expect(error.details.nodeIds).toHaveLength(11);
+      }
+    });
+
+    it('respects custom maxNodes option', async () => {
+      // Create a graph with 3 nodes
+      const mediumGraphJSON = {
+        ...validGraphJSON,
+        nodes: Array.from({ length: 3 }, (_, i) => ({
+          id: `node-${i}`,
+          type: 'query',
+          label: `Node ${i}`,
+          plan: {
+            needsDb: true,
+            entity: 'customers',
+            select: ['customers.*']
+          }
+        }))
+      };
+
+      mockCreate.mockResolvedValue({
+        content: [{
+          type: 'text',
+          text: JSON.stringify(mediumGraphJSON)
+        }]
+      });
+
+      const request = {
+        prompt: 'Generate a medium graph',
+        options: { maxNodes: 2, dryRun: true }
+      };
+
+      await expect(engine.execute(request)).rejects.toThrow(IntentParseError);
+      
+      try {
+        await engine.execute(request);
+      } catch (error: any) {
+        expect(error).toBeInstanceOf(IntentParseError);
+        expect(error.message).toContain('exceeds');
+        expect(error.details.nodeCount).toBe(3);
+        expect(error.details.maxNodes).toBe(2);
+      }
+    });
+
+    it('passes when node count is within maxNodes', async () => {
+      // Create a graph with 3 nodes
+      const mediumGraphJSON = {
+        ...validGraphJSON,
+        nodes: Array.from({ length: 3 }, (_, i) => ({
+          id: `node-${i}`,
+          type: 'query',
+          label: `Node ${i}`,
+          plan: {
+            needsDb: true,
+            entity: 'customers',
+            select: ['customers.*']
+          }
+        }))
+      };
+
+      mockCreate.mockResolvedValue({
+        content: [{
+          type: 'text',
+          text: JSON.stringify(mediumGraphJSON)
+        }]
+      });
+
+      const request = {
+        prompt: 'Generate a medium graph',
+        options: { maxNodes: 5, dryRun: true }
+      };
+
+      const result = await engine.execute(request);
+
+      expect(result.result.success).toBe(true);
+      expect(result.graph.nodes).toHaveLength(3); // 3 nodes within limit of 5
+    });
+  });
+
   describe('error handling', () => {
     it('throws when Anthropic API returns non-text content', async () => {
       mockCreate.mockResolvedValue({
@@ -339,6 +495,162 @@ describe('IntentEngine', () => {
       };
 
       await expect(engineWithoutKey.execute(request)).rejects.toThrow('ANTHROPIC_API_KEY is not set');
+    });
+
+    describe('API search cache integration', () => {
+      let mockSearchService: jest.Mocked<APISearchService>;
+      const mockGraph: ExecutionGraph = {
+        id: 'cached-graph',
+        label: 'Cached Graph',
+        entryNode: 'fetch-customers',
+        nodes: [
+          {
+            id: 'fetch-customers',
+            type: 'query',
+            label: 'Fetch Customers',
+            plan: {
+              needsDb: true,
+              entity: 'customers',
+              select: ['customers.*']
+            }
+          }
+        ],
+        edges: []
+      };
+
+      const mockAPI: any = {
+        id: 'api-1',
+        route: '/test',
+        method: 'GET',
+        planId: 'plan-1',
+        label: 'Test API',
+        status: 'ACTIVE',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        executionGraph: mockGraph
+      };
+
+      it('returns cache hit result when searchService finds match', async () => {
+        // Set up mock search service
+        mockSearchService = {
+          init: jest.fn(),
+          indexAPI: jest.fn(),
+          checkCache: jest.fn(),
+          removeFromIndex: jest.fn()
+        } as any;
+        
+        // Mock search service to return a hit
+        mockSearchService.checkCache.mockResolvedValue({
+          hit: true,
+          match: {
+            apiId: 'api-1',
+            score: 0.95,
+            api: mockAPI
+          },
+          searchTimeMs: 5
+        });
+
+        // Create engine with search service
+        engine = new IntentEngine(mockAnthropicInstance, mockSearchService);
+
+        const request = {
+          prompt: 'Show all active customers',
+          options: { dryRun: true }
+        };
+
+        const result = await engine.execute(request);
+
+        // Verify cache hit behavior
+        expect(result.cacheHit).toBe(true);
+        expect(result.cacheScore).toBe(0.95);
+        expect(result.generationMs).toBe(0); // No generation needed
+        expect(result.graph).toEqual(mockGraph);
+        expect(result.storedGraphId).toBe('api-1');
+
+        // Verify Anthropic SDK was NOT called
+        expect(mockCreate).not.toHaveBeenCalled();
+      });
+
+      it('falls through to generation on cache miss', async () => {
+        // Create a fresh mock for this test
+        const freshMockAnthropic = {
+          messages: {
+            create: jest.fn().mockImplementation(async () => {
+              // Add small delay to ensure generationMs > 0
+              await new Promise(resolve => setTimeout(resolve, 1));
+              return {
+                content: [{
+                  type: 'text',
+                  text: JSON.stringify(mockGraph)
+                }]
+              };
+            })
+          }
+        };
+        
+        // Set up mock search service
+        const mockSearchService = {
+          init: jest.fn(),
+          indexAPI: jest.fn(),
+          checkCache: jest.fn().mockResolvedValue({
+            hit: false,
+            searchTimeMs: 3
+          }),
+          removeFromIndex: jest.fn()
+        } as any;
+
+        // Create engine with search service
+        engine = new IntentEngine(freshMockAnthropic as any, mockSearchService);
+
+        const request = {
+          prompt: 'Show all active customers',
+          options: { dryRun: true }
+        };
+
+        const result = await engine.execute(request);
+
+        // Verify generation occurred
+        expect(freshMockAnthropic.messages.create).toHaveBeenCalled();
+        expect(result.cacheHit).toBeUndefined();
+        expect(result.cacheScore).toBeUndefined();
+        expect(result.generationMs).toBeGreaterThanOrEqual(0);
+        expect(result.graph).toEqual(mockGraph);
+      });
+
+      it('works normally when no searchService provided', async () => {
+        // Create a fresh mock for this test
+        const freshMockAnthropic = {
+          messages: {
+            create: jest.fn().mockImplementation(async () => {
+              // Add small delay to ensure generationMs > 0
+              await new Promise(resolve => setTimeout(resolve, 1));
+              return {
+                content: [{
+                  type: 'text',
+                  text: JSON.stringify(mockGraph)
+                }]
+              };
+            })
+          }
+        };
+
+        // Create engine WITHOUT search service
+        engine = new IntentEngine(freshMockAnthropic as any);
+
+        const request = {
+          prompt: 'Show all active customers',
+          options: { dryRun: true }
+        };
+
+        const result = await engine.execute(request);
+
+        // Verify normal generation occurred
+        expect(freshMockAnthropic.messages.create).toHaveBeenCalled();
+        expect(result.cacheHit).toBeUndefined();
+        expect(result.cacheScore).toBeUndefined();
+        expect(result.generationMs).toBeGreaterThanOrEqual(0);
+        expect(result.graph).toEqual(mockGraph);
+      });
     });
   });
 });

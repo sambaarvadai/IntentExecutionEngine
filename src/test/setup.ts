@@ -61,27 +61,32 @@ jest.mock('../config', () => ({
 
 // Mock schema metadata module
 jest.mock('../schema/metadata', () => ({
-  getSchemaMetadata: jest.fn().mockResolvedValue({
-    tables: [
-      {
-        name: 'customers',
-        columns: [
-          { name: 'id', type: 'INTEGER', nullable: false },
-          { name: 'name', type: 'TEXT', nullable: false },
-          { name: 'city', type: 'TEXT', nullable: false },
-          { name: 'score', type: 'INTEGER', nullable: true }
-        ]
+  getSchemaMetadata: jest.fn().mockReturnValue({
+    tables: {
+      customers: {
+        fields: {
+          'customers.id': { type: 'INTEGER', filterable: true, selectable: true, sortable: true },
+          'customers.name': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
+          'customers.city': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
+          'customers.score': { type: 'INTEGER', filterable: true, selectable: true, sortable: true },
+          'customers.*': { type: 'text', filterable: false, selectable: true, sortable: false }
+        },
+        joins: {
+          'orders': 'customers.id = orders.customer_id'
+        }
       },
-      {
-        name: 'orders',
-        columns: [
-          { name: 'id', type: 'INTEGER', nullable: false },
-          { name: 'customer_id', type: 'INTEGER', nullable: false },
-          { name: 'amount', type: 'REAL', nullable: false },
-          { name: 'created_at', type: 'TEXT', nullable: false }
-        ]
+      orders: {
+        fields: {
+          'orders.id': { type: 'INTEGER', filterable: true, selectable: true, sortable: true },
+          'orders.customer_id': { type: 'INTEGER', filterable: true, selectable: true, sortable: true },
+          'orders.item': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
+          'orders.amount': { type: 'REAL', filterable: true, selectable: true, sortable: true },
+          'orders.created_at': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
+          'orders.*': { type: 'text', filterable: false, selectable: true, sortable: false }
+        },
+        joins: undefined
       }
-    ],
+    },
     allowedAggregations: ['count', 'sum', 'avg', 'min', 'max'],
     allowedOperators: ['=', '!=', '>', '<', '>=', '<=', 'LIKE', 'NOT LIKE', 'IN', 'NOT IN', 'IS NULL', 'IS NOT NULL', 'BETWEEN'],
     maxLimit: 100
