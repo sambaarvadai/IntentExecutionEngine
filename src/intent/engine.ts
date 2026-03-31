@@ -48,19 +48,60 @@ import {
   GraphRuntime 
 } from '../graph/runtime';
 
+import { APISearchService } from '../search';
+
 // ------------------------------------------------------------------
 // Intent Engine Class
 // ------------------------------------------------------------------
 
 export class IntentEngine {
   constructor(
-    private anthropic: Anthropic
+    private anthropic: Anthropic,
+    private searchService?: APISearchService  // optional
   ) {}
 
   async execute(request: IntentRequest): Promise<IntentResult> {
     const startTime = Date.now();
     
     try {
+      // Cache check — skip if no search service configured
+      if (this.searchService) {
+        const cacheResult = await this.searchService.checkCache(
+          request.prompt
+        );
+        
+        if (cacheResult.hit && cacheResult.match) {
+          const api = cacheResult.match.api;
+          const graph = (api as any).executionGraph as ExecutionGraph;
+          
+          // Execute the cached graph
+          const executionStart = Date.now();
+          const runtime = new GraphRuntime();
+          const result = request.options?.dryRun
+            ? { 
+                graphId: graph.id, success: true, 
+                nodeResults: new Map(), finalOutput: null, 
+                totalExecutionTime: 0 
+              }
+            : await runtime.execute(graph, {
+                maxParallelNodes: request.options?.allowParallel ? 5 : 1,
+                dryRun: false
+              });
+
+          return {
+            graph,
+            result,
+            generationMs: 0,            // no generation needed
+            executionMs: Date.now() - executionStart,
+            prompt: request.prompt,
+            storedGraphId: api.id,
+            cacheHit: true,             // add to IntentResult
+            cacheScore: cacheResult.match.score
+          };
+        }
+      }
+
+      // Cache miss — continue with normal generation flow
       const schemaMetadata = getSchemaMetadata();
       const systemPrompt = buildIntentPrompt(schemaMetadata);
 
@@ -88,6 +129,9 @@ export class IntentEngine {
       }
 
       const generationMs = Date.now() - startTime;
+
+      // Step 2: Validate graph constraints
+      this.validateGraphConstraints(graph, request.options);
 
       // Step 3: Handle dry run
       if (request.options?.dryRun) {
@@ -175,6 +219,9 @@ export class IntentEngine {
             : 'Unknown error')
       });
 
+      // Note: We do NOT auto-index here. Indexing happens when an API is approved,
+      // not when a graph is generated.
+
       return {
         graph,
         result,
@@ -207,6 +254,25 @@ export class IntentEngine {
   // ------------------------------------------------------------------
   // Private Helpers
   // ------------------------------------------------------------------
+
+  private validateGraphConstraints(
+    graph: ExecutionGraph,
+    options?: IntentRequest['options']
+  ): void {
+    const maxNodes = options?.maxNodes ?? 10  // default 10
+
+    if (graph.nodes.length > maxNodes) {
+      throw new IntentParseError(
+        `Generated graph has ${graph.nodes.length} nodes which exceeds ` +
+        `the maximum of ${maxNodes}`,
+        {
+          nodeCount: graph.nodes.length,
+          maxNodes,
+          nodeIds: graph.nodes.map(n => n.id)
+        }
+      );
+    }
+  }
 
   private async generateGraph(messages: MessageParam[], systemPrompt: string): Promise<{ graph: ExecutionGraph, rawText: string }> {
     const config = getConfig();
@@ -241,7 +307,26 @@ export class IntentEngine {
       throw new Error(`Failed to parse LLM response as JSON: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 
-    // Parse and validate the graph
+    // Check if this is a conversational response (ConversationalPlan)
+    const parsedObj = parsed as Record<string, unknown>;
+    if (parsedObj.needsDb === false && parsedObj.responseMode === 'conversational') {
+      // Create a minimal conversational graph with no database nodes
+      const conversationalGraph: ExecutionGraph = {
+        id: 'conversational-response',
+        label: 'Conversational Response',
+        nodes: [{
+          id: 'conversational',
+          type: 'transform',
+          label: 'Conversational Response',
+          transform: () => 'conversational response'
+        }],
+        edges: [],
+        entryNode: 'conversational'
+      };
+      return { graph: conversationalGraph, rawText };
+    }
+
+    // Parse and validate the graph for database queries
     try {
       const graph = parseIntentGraph(parsed);
       return { graph, rawText };

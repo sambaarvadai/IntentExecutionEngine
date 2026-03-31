@@ -1,14 +1,12 @@
 import dotenv from 'dotenv';
 import { getDatabase } from './db/sqlite';
-import { interpretUserRequest } from './llm';
-import { executePlan } from './execution/run';
-import { AnyPlan, ExecutionResult, QueryResult } from './plans/types';
 import { formatResponse, reframeResponse } from './response';
 import { closeDatabase } from './db/sqlite';
-import { buildQueryPipeline } from './plans';
-import { AnthropicAdapter } from './plans';
 import { getConfig } from './config';
-import { executeCompiledQuery } from './execution';
+import Anthropic from '@anthropic-ai/sdk';
+import { IntentEngine } from './intent';
+import { createSearchService } from './search';
+import { GraphRuntime } from './graph/runtime';
 
 // Load environment variables
 dotenv.config();
@@ -20,9 +18,25 @@ async function main(): Promise<void> {
   try {
     // Connect to database (assumes database is already initialized)
     
-    console.log('� Connecting to database...');
+    console.log('🔌 Connecting to database...');
     await getDatabase();
     console.log('✅ Database ready\n');
+    
+    // Initialize services
+    const anthropic = new Anthropic({ 
+      apiKey: process.env.ANTHROPIC_API_KEY 
+    });
+    
+    // const searchService = process.env.VOYAGE_API_KEY
+    //   ? createSearchService()
+    //   : undefined;
+    
+    // if (searchService) await searchService.init();
+    
+    const engine = new IntentEngine(anthropic);
+    
+    // console.log(`🔍 Semantic cache: ${searchService ? 'enabled' : 'disabled'}`);
+    console.log(`🧠 Intent engine: ready\n`);
     
     // Start chat loop
     console.log('💬 Chat interface ready. Type "exit" to quit.');
@@ -55,45 +69,42 @@ async function main(): Promise<void> {
         
         const config = getConfig();
         
-        // Choose execution path based on pipeline configuration
-        let result;
-        let pipelineResult = null;
-        if (config.pipeline.enabled) {
-          console.log('🔧 Using enhanced query pipeline with self-correction...');
-          const adapter = new AnthropicAdapter();
-          pipelineResult = await buildQueryPipeline(userInput, adapter);
-          
-          // Check if this is a conversational plan
-          if (pipelineResult.compiled.sql === '') {
-            result = { success: true, data: "I'm here to help you query the database. You can ask me about customers, orders, and perform various analyses." };
-          } else {
-            // Execute compiled query directly
-            result = await executeCompiledQuery(pipelineResult.compiled);
+        // Execute using the full pipeline
+        let intentResult;
+        try {
+          intentResult = await engine.execute({
+            prompt: userInput,
+            options: { dryRun: false, allowParallel: true }
+          });
+        } catch (error) {
+          // surface IntentParseError clearly
+          throw error;
+        }
+
+        // Log whether this was a cache hit
+        if (intentResult.cacheHit) {
+          console.log(`⚡ Cache hit (score: ${intentResult.cacheScore?.toFixed(3)})`);
+        } else {
+          console.log(`� Generated new graph in ${intentResult.generationMs}ms`);
+          console.log(`💾 Stored as draft: ${intentResult.storedGraphId}`);
+        }
+
+        const result = intentResult.result;
+        
+        // Extract rows from graph result for reframing
+        const data = result.finalOutput;
+        
+        let response;
+        if (config.pipeline.enableResponseReframing && data) {
+          try {
+            response = await reframeResponse(userInput, data, undefined);
+          } catch {
+            response = JSON.stringify(data, null, 2);
           }
         } else {
-          console.log('📝 Using standard query interpretation...');
-          // Interpret user request
-          const plan = await interpretUserRequest(userInput);
-          
-          // Execute the plan
-          result = await executePlan(plan);
-        }
-        
-        // Format and display response
-        let response = formatResponse(result);
-        
-        // Apply response reframing if enabled
-        if (config.pipeline.enableResponseReframing && result.success && result.data) {
-          try {
-            const sql = config.pipeline.enabled && pipelineResult ? 
-              pipelineResult.compiled.sql : 
-              (result.data as QueryResult).rows ? 'Query executed' : undefined;
-            
-            response = await reframeResponse(userInput, result.data, sql);
-          } catch (error) {
-            console.warn('Response reframing failed, using formatted response:', error);
-            // Keep original formatted response
-          }
+          response = result.success 
+            ? JSON.stringify(data, null, 2)
+            : `Error: ${result.failedNode ?? 'execution failed'}`;
         }
         
         console.log(`🤖: ${response}\n`);

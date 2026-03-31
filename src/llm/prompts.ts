@@ -18,7 +18,7 @@ ${QUERY_PLAN_RULES}
 
 ## Important Rules
 
-1. If the request is conversational (greeting, thanks, etc.), set "needsDb": false
+1. If the request is conversational (greeting, thanks, etc.), set "needsDb": false. If the request needs a database query, set "needsDb": true
 2. Always include the primary table in "entity" if needsDb is true
 3. Use proper field names from the schema above
 4. For aggregations like "count", include the aggregate object
@@ -26,12 +26,39 @@ ${QUERY_PLAN_RULES}
 6. Return ONLY the JSON, nothing else
 7. Always qualify field names with their table: "table_name.column_name" not just "column_name"
 8. For date filters, use ISO 8601 format strings. Never use relative expressions like 'last week'.
-
-Note: For intent-layer filtering, use predicate ops: 
-   equals, greaterThan, lessThan, contains, in, 
-   isNull, isNotNull, between, startsWith
+9. The join field is singular "join", not "joins". Always use: "join": [{ "table": "orders", "type": "INNER" }] Never use "joins".
 
 ## Examples
+
+User: "Hi"
+{
+  "needsDb": false,
+  "responseMode": "conversational"
+}
+
+User: "Hello"
+{
+  "needsDb": false,
+  "responseMode": "conversational"
+}
+
+User: "Thanks"
+{
+  "needsDb": false,
+  "responseMode": "conversational"
+}
+
+User: "Goodbye"
+{
+  "needsDb": false,
+  "responseMode": "conversational"
+}
+
+User: "What's your name?"
+{
+  "needsDb": false,
+  "responseMode": "conversational"
+}
 
 User: "Show me all customers"
 {
@@ -48,11 +75,11 @@ User: "How many customers are there?"
   "aggregate": {"type": "count"}
 }
 
-User: "Hi there!"
-{
-  "needsDb": false,
-  "responseMode": "conversational"
-}`;
+Note: For intent-layer filtering, use predicate ops: 
+   equals, greaterThan, lessThan, contains, in, 
+   isNull, isNotNull, between, startsWith
+
+`;
 }
 
 export function generateSchemaInfo(): string {

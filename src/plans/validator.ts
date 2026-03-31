@@ -41,7 +41,7 @@ const ALLOWED_JOIN_TYPES = new Set([
 const ALLOWED_DIRECTIONS = new Set(['ASC', 'DESC']);
 
 const ALLOWED_AGGREGATE_TYPES = new Set([
-  'count', 'sum', 'avg', 'min', 'max',
+  'count', 'countDistinct', 'sum', 'avg', 'min', 'max',
 ]);
 
 const IDENTIFIER_REGEX = /^[a-zA-Z_][a-zA-Z0-9_.]*(\.\*)?$/;
@@ -250,8 +250,14 @@ function validateJoins(
       }
     }
 
-    // Check join condition exists in schema
-    if (tableSchema && !tableSchema.joins?.[joinTable]) {
+    // Check join condition exists in schema (either manual joins or derived from foreign keys)
+    const hasManualJoin = tableSchema?.joins?.[joinTable];
+    const hasDerivedJoin = schema.relationships?.some((rel: any) => 
+      (rel.fromTable === plan.entity && rel.toTable === joinTable) ||
+      (rel.toTable === plan.entity && rel.fromTable === joinTable)
+    );
+    
+    if (tableSchema && !hasManualJoin && !hasDerivedJoin) {
       issues.push(error(`join[${i}]`, `No join condition defined in schema between "${plan.entity}" and "${joinTable}".`, 'Add a join condition to your schema metadata or remove this join.'));
     }
   });
@@ -404,31 +410,22 @@ function buildLlmFeedback(issues: ValidationIssue[]): string {
 function getAllAvailableColumns(plan: QueryPlan, schema: ReturnType<typeof getSchemaMetadata>): Record<string, boolean> {
   const available: Record<string, boolean> = {};
   
-  // Add columns from main entity
-  const mainTable = schema.tables[plan.entity!];
-  if (mainTable) {
-    Object.keys(mainTable.fields).forEach(field => {
+  // Primary table fields - they're already prefixed in the schema
+  const primaryFields = schema.tables[plan.entity!]?.fields ?? {};
+  Object.keys(primaryFields).forEach(field => {
+    available[field] = true;
+  });
+
+  // Joined table fields - handle both "join" and "joins"
+  const joins = plan.join ?? (plan as any).joins ?? [];
+  for (const joinEntry of joins) {
+    const joinTable = typeof joinEntry === 'string' 
+      ? joinEntry 
+      : joinEntry.table;
+    const joinFields = schema.tables[joinTable]?.fields ?? {};
+    Object.keys(joinFields).forEach(field => {
       available[field] = true;
     });
-  }
-  
-  // Add columns from joined tables
-  if (plan.join && plan.join.length > 0) {
-    plan.join.forEach(joinEntry => {
-      const joinTable = typeof joinEntry === 'string' ? joinEntry : joinEntry?.table;
-      const joinedTableSchema = schema.tables[joinTable];
-      if (joinedTableSchema) {
-        Object.keys(joinedTableSchema.fields).forEach(field => {
-          available[field] = true;
-        });
-      }
-    });
-  }
-  
-  // Debug logging
-  const config = getConfig();
-  if (config.app.debug) {
-    console.log(`[Validator] Available columns for ${plan.entity}:`, Object.keys(available));
   }
   
   return available;

@@ -236,6 +236,12 @@ function compileAggregate(aggregate: Aggregate, dialect: Dialect): string {
         ? `COUNT(${validateIdentifier(aggregate.field, 'aggregate', dialect)})`
         : 'COUNT(*)';
       break;
+    case 'countDistinct':
+      if (!aggregate.field) {
+        throw new Error(`Aggregation "countDistinct" requires a field`);
+      }
+      expr = `COUNT(DISTINCT ${validateIdentifier(aggregate.field, 'aggregate', dialect)})`;
+      break;
     case 'sum':
     case 'avg':
     case 'min':
@@ -295,6 +301,11 @@ export function compileQuery(
   plan: QueryPlan, 
   dialect: Dialect = getDialect('sqlite')  // default preserves current behaviour
 ): CompiledQuery {
+  // Normalise: LLM sometimes uses "joins" instead of "join"
+  if ((plan as any).joins && !plan.join) {
+    plan = { ...plan, join: (plan as any).joins };
+  }
+
   const collector = makeCollector(dialect);
   let sql = 'SELECT ';
 

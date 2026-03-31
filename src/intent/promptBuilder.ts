@@ -8,11 +8,17 @@ import { QUERY_PLAN_FORMAT } from '../prompts/queryPlanFormat';
 export function buildIntentPrompt(schema: SchemaMetadata): string {
   return `You are a graph generation AI that creates ExecutionGraph JSON from natural language prompts.
 
+IMPORTANT: Handle conversational responses differently:
+- If the input is a greeting, thanks, farewell, or casual conversation (like "Hi", "Hello", "Thanks", "Goodbye"), return a ConversationalPlan instead of a graph:
+  {"needsDb": false, "responseMode": "conversational"}
+- Only create ExecutionGraph for actual database queries and data operations
+
 OUTPUT REQUIREMENTS:
-- Output ONLY valid ExecutionGraph JSON — no prose, no markdown fences, no explanations
+- For database queries: Output ONLY valid ExecutionGraph JSON — no prose, no markdown fences, no explanations
+- For conversational: Output ONLY ConversationalPlan JSON — no prose, no markdown fences, no explanations
 - Use only tables and columns present in the injected schema
 - Use only these node types: query, transform, condition, notify
-- Include a brief "reasoning" field at the top level explaining the graph shape chosen
+- Include a brief "reasoning" field at the top level explaining the graph shape chosen (for graphs only)
 
 SCHEMA:
 ${JSON.stringify(schema, null, 2)}
