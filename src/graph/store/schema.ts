@@ -11,6 +11,7 @@ export function ensureGraphStoreSchema(db: Database): void {
       id              TEXT PRIMARY KEY,
       prompt          TEXT NOT NULL,
       graph_json      TEXT NOT NULL,
+      intent_json     TEXT,                        -- QueryIntent serialized as JSON
       status          TEXT NOT NULL DEFAULT 'draft',
       created_at      INTEGER NOT NULL,
       updated_at      INTEGER NOT NULL,

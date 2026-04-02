@@ -64,6 +64,7 @@ export interface ExecutionGraph {
     metric?: string;
     sorting?: string;
     limit?: number;
+    plainText?: string;    // ADD — Haiku-generated plain English
   };
 }
 

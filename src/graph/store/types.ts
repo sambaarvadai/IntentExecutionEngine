@@ -10,6 +10,7 @@ export interface StoredGraph {
   id: string;
   prompt: string;
   graphJson: string;           // ExecutionGraph serialized as JSON string
+  intentJson?: string;         // QueryIntent serialized as JSON string
   status: GraphStatus;
   createdAt: number;           // unix timestamp ms
   updatedAt: number;
@@ -28,6 +29,7 @@ export interface StoredGraph {
 export interface CreateGraphInput {
   prompt: string;
   graph: ExecutionGraph;       // import from graph/types
+  intent?: any;                // QueryIntent object (optional)
   generationMs: number;
   executionMs: number;
   success: boolean;

@@ -61,7 +61,6 @@ import {
 } from '../session/store';
 
 import { 
-  buildIntentSummary,
   formatSummary 
 } from './intentCompiler';
 
@@ -146,11 +145,13 @@ export class IntentEngine {
       let graph: ExecutionGraph;
       let lastRawText: string = '';
       let correctionAttempts = 0;
+      let intent: QueryIntent | null = null;
       
       try {
         const result = await this.generateGraph(messages, systemPrompt);
         graph = result.graph;
         lastRawText = result.rawText;
+        intent = result.intent; // Capture the intent
         
         console.log('[DEBUG] generated graph:', JSON.stringify(graph, null, 2));
       } catch (error) {
@@ -158,6 +159,7 @@ export class IntentEngine {
           const correctionResult = await this.correctGraph(messages, error, systemPrompt, schemaMetadata, error.rawText ?? '');
           graph = correctionResult.graph;
           correctionAttempts = correctionResult.attempts;
+          // Note: In correction path, we don't have access to the final intent, but we can reconstruct it from the graph
         } else {
           throw error;
         }
@@ -165,20 +167,34 @@ export class IntentEngine {
 
       const generationMs = Date.now() - startTime;
 
-      // Add intentSummary to graph
-      if (graph.nodes[0]?.plan) {
-        const queryPlan = graph.nodes[0].plan;
-        const mockIntent: any = {
-          tables: queryPlan.entity ? [queryPlan.entity] : [],
-          filters: queryPlan.where ? [queryPlan.where] : [],
-          aggregate: queryPlan.aggregate,
-          groupBy: queryPlan.groupBy,
-          having: queryPlan.having,
-          orderBy: queryPlan.orderBy,
-          distinct: queryPlan.distinct,
-          limit: queryPlan.limit
+      // Generate readable summary (cheap Haiku call ~100ms)
+      if (intent) {
+        const summary = await this.generateSummary(intent);
+        graph.intentSummary = { 
+          action: '', subject: '',  // keep structure for compatibility
+          plainText: summary         // add this field
         };
-        graph.intentSummary = buildIntentSummary(mockIntent);
+      }
+
+      // Conversational responses never need preview confirmation
+      const isConversational = graph.nodes[0]?.id === 'conversational';
+      
+      if (isConversational) {
+        // Execute immediately regardless of preview flag
+        const runtime = new GraphRuntime();
+        const result = await runtime.execute(graph, {
+          maxParallelNodes: request.options?.allowParallel ? 5 : 1,
+          dryRun: false
+        });
+        return {
+          graph,
+          result,
+          generationMs,
+          executionMs: 0,
+          prompt: request.prompt,
+          storedGraphId: '',
+          status: 'success'   // not 'preview'
+        };
       }
 
       // Preview mode — save graph and return summary without executing
@@ -187,6 +203,7 @@ export class IntentEngine {
         const stored = await graphRepository.save({
           prompt: request.prompt,
           graph,
+          intent,          // ADD — the QueryIntent object
           generationMs,
           executionMs: 0,
           success: true
@@ -271,6 +288,7 @@ export class IntentEngine {
         const stored = await graphRepository.save({
           prompt: request.prompt,
           graph,
+          intent,          // ADD — the QueryIntent object
           generationMs,
           executionMs: 0,
           success: true
@@ -324,6 +342,7 @@ export class IntentEngine {
       const stored = await graphRepository.save({
         prompt: request.prompt,
         graph,
+        intent,          // ADD — the QueryIntent object
         generationMs,
         executionMs,
         success: result.success,
@@ -404,6 +423,28 @@ export class IntentEngine {
   // Private Helpers
   // ------------------------------------------------------------------
 
+  // Generate human-readable summary using Haiku
+  private async generateSummary(
+    intent: QueryIntent
+  ): Promise<string> {
+    // Don't summarise conversational intents
+    if (intent.conversational) return '';
+    
+    const config = getConfig();
+    const response = await this.anthropic.messages.create({
+      model: config.llm.summaryModel,
+      max_tokens: 150,
+      system: `You explain database queries in plain English for 
+non-technical users. Be concise, friendly, and specific.
+2-4 lines maximum. No SQL, no jargon.`,
+      messages: [{
+        role: 'user',
+        content: `Explain what this database query does:\n${JSON.stringify(intent, null, 2)}` 
+      }]
+    });
+    return (response.content[0] as any).text.trim();
+  }
+
   private validateGraphConstraints(
     graph: ExecutionGraph,
     options?: IntentRequest['options']
@@ -423,7 +464,7 @@ export class IntentEngine {
     }
   }
 
-  private async generateGraph(messages: MessageParam[], systemPrompt: string): Promise<{ graph: ExecutionGraph, rawText: string }> {
+  private async generateGraph(messages: MessageParam[], systemPrompt: string): Promise<{ graph: ExecutionGraph, rawText: string, intent: QueryIntent }> {
     const config = getConfig();
     
     const response = await this.anthropic.messages.create({
@@ -493,7 +534,7 @@ export class IntentEngine {
     const schema = getSchemaMetadata();
     const graph = compileIntent(intent, schema);
     
-    return { graph, rawText };
+    return { graph, rawText, intent };
   }
 
   private async correctGraph(

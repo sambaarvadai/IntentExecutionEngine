@@ -36,20 +36,24 @@ export class GraphRepository {
     // Serialize input.graph to JSON string
     const graphJson = JSON.stringify(input.graph);
     
+    // Serialize input.intent to JSON string if provided
+    const intentJson = input.intent ? JSON.stringify(input.intent) : null;
+    
     // Calculate node count
     const nodeCount = input.graph.nodes?.length || 0;
     
     // Insert row into stored_graphs
     await db.run(`
       INSERT INTO stored_graphs (
-        id, prompt, graph_json, status, created_at, updated_at,
+        id, prompt, graph_json, intent_json, status, created_at, updated_at,
         generation_ms, execution_ms, execution_count, last_used_at,
         approved_by, approval_note, node_count, success, error_message, prompt_embedding
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       id,
       input.prompt,
       graphJson,
+      intentJson,
       'draft', // initial status
       now,
       now,
@@ -77,7 +81,7 @@ export class GraphRepository {
     const db = await getGraphDatabase();
     const rows = await db.all(`
       SELECT 
-        id, prompt, graph_json, status, created_at, updated_at,
+        id, prompt, graph_json, intent_json, status, created_at, updated_at,
         generation_ms, execution_ms, execution_count, last_used_at,
         approved_by, approval_note, node_count, success, error_message, prompt_embedding
       FROM stored_graphs 
@@ -147,7 +151,7 @@ export class GraphRepository {
     const db = await getGraphDatabase();
     let sql = `
       SELECT 
-        id, prompt, graph_json, status, created_at, updated_at,
+        id, prompt, graph_json, intent_json, status, created_at, updated_at,
         generation_ms, execution_ms, execution_count, last_used_at,
         approved_by, approval_note, node_count, success, error_message, prompt_embedding
       FROM stored_graphs
@@ -226,6 +230,7 @@ export class GraphRepository {
       id: row.id,
       prompt: row.prompt,
       graphJson: row.graph_json,
+      intentJson: row.intent_json || null,
       status: row.status,
       createdAt: row.created_at,
       updatedAt: row.updated_at,

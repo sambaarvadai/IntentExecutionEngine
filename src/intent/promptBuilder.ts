@@ -51,6 +51,14 @@ RULES:
 - If query is a greeting or conversation, set conversational: true
   and leave other fields empty
 
+MULTIPLE VALUES ON SAME FIELD:
+- When matching one field against multiple possible values,
+  always use IN — never multiple LIKE or = conditions
+- Use LIKE only for a single partial match on one value
+- Use OR logic only when filtering different fields
+- If the user provides a list, or context contains a list
+  of values for the same column, always collapse to IN
+
 FIELD NAME RULES:
 - Single-table: bare column names in filters ("city", "created_at")
 - Multi-table: table-prefixed in filters ("orders.created_at")

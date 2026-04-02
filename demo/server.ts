@@ -145,39 +145,46 @@ async function initializeServer() {
       // Record turn in session if sessionId provided
       if (sessionId && result.success) {
         const rows = extractRows(result.finalOutput);
-        const intent = (stored as any).intent;  // stored alongside graph
+        const intent = stored.intentJson 
+          ? JSON.parse(stored.intentJson) 
+          : null;
         
-        if (intent) {
-          const turn: TurnRecord = {
-            turnId: crypto.randomUUID(),
-            timestamp: Date.now(),
-            rawQuery: stored.prompt,
-            intentSummary: graph.intentSummary!,
-            intent: {
-              tables: intent.tables ?? [],
-              filters: intent.filters ?? [],
-              aggregate: intent.aggregate,
-              groupBy: intent.groupBy,
-              having: intent.having,
-              orderBy: Array.isArray(intent.orderBy)
-                ? intent.orderBy
-                : intent.orderBy ? [intent.orderBy] : undefined,
-              distinct: intent.distinct,
-              limit: intent.limit
-            },
-            resultShape: {
-              rowCount: rows.length,
-              columns: rows.length > 0 ? Object.keys(rows[0]) : [],
-              primaryTable: intent.tables?.[0] ?? 'unknown',
-              primaryKeyValues: rows
-                .map((r: any) => r['id'])
-                .filter(Boolean)
-                .slice(0, 100),
-              sampleRows: rows.slice(0, 3)
-            }
-          };
-          await sessionStore.appendTurn(sessionId, turn);
-        }
+        // Record turn regardless — intent fields are best-effort
+        const turn: TurnRecord = {
+          turnId: crypto.randomUUID(),
+          timestamp: Date.now(),
+          rawQuery: stored.prompt,
+          intentSummary: graph.intentSummary ?? {
+            action: 'Query',
+            subject: 'results'
+          },
+          intent: intent ? {
+            tables: intent.tables ?? [],
+            filters: intent.filters ?? [],
+            aggregate: intent.aggregate,
+            groupBy: intent.groupBy,
+            having: intent.having,
+            orderBy: Array.isArray(intent.orderBy)
+              ? intent.orderBy
+              : intent.orderBy ? [intent.orderBy] : undefined,
+            distinct: intent.distinct,
+            limit: intent.limit
+          } : {
+            tables: [],
+            filters: []
+          },
+          resultShape: {
+            rowCount: rows.length,
+            columns: rows.length > 0 ? Object.keys(rows[0]) : [],
+            primaryTable: graph.nodes[0]?.plan?.entity ?? 'unknown',
+            primaryKeyValues: rows
+              .map((r: any) => r['id'])
+              .filter(Boolean)
+              .slice(0, 100),
+            sampleRows: rows.slice(0, 3)
+          }
+        };
+        await sessionStore.appendTurn(sessionId, turn);
       }
 
       res.setHeader('x-session-id', sessionId ?? '');

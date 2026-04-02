@@ -5,9 +5,12 @@ import { closeDatabase } from './db/sqlite';
 import { getConfig } from './config';
 import Anthropic from '@anthropic-ai/sdk';
 import { IntentEngine } from './intent';
+import { IntentResult } from './intent/types';
 import { createSearchService } from './search';
 import { GraphRuntime } from './graph/runtime';
 import { SessionStore } from './session/store';
+import { graphRepository } from './graph/store';
+import { randomUUID } from 'crypto';
 
 // Load environment variables
 dotenv.config();
@@ -56,10 +59,58 @@ async function main(): Promise<void> {
       input: process.stdin,
       output: process.stdout
     });
+
+    function askQuestion(question: string): Promise<string> {
+      return new Promise(resolve => {
+        rl.question(question, resolve);
+      });
+    }
+
+    async function previewAndConfirm(
+      prompt: string, 
+      sessionId: string
+    ): Promise<IntentResult | null> {
+      
+      const result = await engine.execute({
+        prompt,
+        sessionId,
+        options: { preview: true }
+      });
+      
+      // If it's a conversational intent, it's already executed
+      if (result.status === 'success' && !result.storedGraphId) {
+        // Conversational response - display and return immediately
+        console.log(`🤖: ${result.result?.finalOutput || 'Response received'}\n`);
+        return null;  // Don't continue the main loop
+      }
+      
+      console.log('\n📋 Here\'s what I understood:');
+      console.log('─'.repeat(50));
+      console.log(result.intentSummary?.plainText ?? prompt);
+      console.log('─'.repeat(50));
+      console.log('  [yes] Run it   [no] Cancel   [or refine your query]');
+      
+      const answer = (await askQuestion('Your choice: ')).trim();
+      const answerLower = answer.toLowerCase();
+      
+      if (answerLower === 'no' || answerLower === 'n') {
+        console.log('❌ Cancelled.\n');
+        return null;
+      }
+      
+      if (answerLower === 'yes' || answerLower === 'y') {
+        return result;  // caller executes this
+      }
+      
+      // Refinement — recurse with the new prompt
+      const refinedPrompt = answer.replace(/^refine[,:\s]+/i, '').trim();
+      console.log('🔄 Refining...\n');
+      return previewAndConfirm(refinedPrompt, sessionId);
+    }
     
     while (true) {
       try {
-        const userInput = await new Promise<string>((resolve) => {
+        let userInput = await new Promise<string>((resolve) => {
           rl.question('You: ', resolve);
         });
         
@@ -94,32 +145,52 @@ async function main(): Promise<void> {
           continue;
         }
         
+        // Preview and confirm before execution
+        const confirmed = await previewAndConfirm(userInput, cliSessionId);
+        if (!confirmed) continue;
+        
+        // Execute confirmed.storedGraphId
         console.log('🔄 Processing...');
-        
-        const config = getConfig();
-        
-        // Execute using the full pipeline
         let intentResult;
-        try {
-          intentResult = await engine.execute({
-            prompt: userInput,
-            sessionId: cliSessionId,
-            options: { dryRun: false, allowParallel: true }
-          });
-        } catch (error) {
-          // surface IntentParseError clearly
-          throw error;
-        }
-
-        // Log whether this was a cache hit
-        if (intentResult.cacheHit) {
-          console.log(`⚡ Cache hit (score: ${intentResult.cacheScore?.toFixed(3)})`);
+        if (confirmed.storedGraphId && confirmed.status === 'preview') {
+          // Execute the pre-compiled graph — no second LLM call
+          const runtime = new GraphRuntime();
+          const graphRecord = await graphRepository.findById(confirmed.storedGraphId);
+          if (graphRecord) {
+            const graph = JSON.parse(graphRecord.graphJson);
+            const execResult = await runtime.execute(graph);
+            
+            // Record turn in session
+            if (cliSessionId && execResult.success) {
+              const rows = extractRows(execResult.finalOutput);
+              const turn = {
+                turnId: randomUUID(),
+                timestamp: Date.now(),
+                rawQuery: userInput,
+                intentSummary: graph.intentSummary ?? { action: 'Query', subject: 'results' },
+                intent: { tables: [], filters: [] },
+                resultShape: {
+                  rowCount: rows.length,
+                  columns: rows.length > 0 ? Object.keys(rows[0]) : [],
+                  primaryTable: graph.nodes[0]?.plan?.entity ?? 'unknown',
+                  primaryKeyValues: rows.map((r: any) => r['id']).filter(Boolean).slice(0, 100),
+                  sampleRows: rows.slice(0, 3)
+                }
+              };
+              await sessionStore.appendTurn(cliSessionId, turn);
+            }
+            
+            intentResult = { ...confirmed, result: execResult };
+          } else {
+            intentResult = confirmed;  // fallback if no stored graph
+          }
         } else {
-          console.log(`� Generated new graph in ${intentResult.generationMs}ms`);
-          console.log(`💾 Stored as draft: ${intentResult.storedGraphId}`);
+          intentResult = confirmed;  // fallback if no stored graph
         }
 
         const result = intentResult.result;
+        
+        const config = getConfig();
         
         // Extract rows from graph result for reframing
         const data = result.finalOutput;
@@ -153,6 +224,13 @@ async function main(): Promise<void> {
     // Clean up database connection
     await closeDatabase();
   }
+}
+
+function extractRows(output: any): Record<string, unknown>[] {
+  if (!output) return [];
+  if (Array.isArray(output)) return output;
+  if (output?.rows && Array.isArray(output.rows)) return output.rows;
+  return [];
 }
 
 // Handle graceful shutdown
