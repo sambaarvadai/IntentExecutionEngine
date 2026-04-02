@@ -7,6 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { IntentEngine } from './intent';
 import { createSearchService } from './search';
 import { GraphRuntime } from './graph/runtime';
+import { SessionStore } from './session/store';
 
 // Load environment variables
 dotenv.config();
@@ -33,7 +34,9 @@ async function main(): Promise<void> {
     
     // if (searchService) await searchService.init();
     
-    const engine = new IntentEngine(anthropic);
+    const db = await getDatabase();
+    const sessionStore = new SessionStore(db);
+    const engine = new IntentEngine(anthropic, sessionStore);
     
     // console.log(`🔍 Semantic cache: ${searchService ? 'enabled' : 'disabled'}`);
     console.log(`🧠 Intent engine: ready\n`);

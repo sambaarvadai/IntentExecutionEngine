@@ -56,6 +56,15 @@ export interface ExecutionGraph {
   
   // Optional context for execution
   requestContext?: RequestContext;
+  intentSummary?: {
+    action: string;
+    subject: string;
+    filters?: string[];
+    grouping?: string;
+    metric?: string;
+    sorting?: string;
+    limit?: number;
+  };
 }
 
 // ------------------------------------------------------------------

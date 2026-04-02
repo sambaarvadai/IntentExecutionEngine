@@ -49,6 +49,19 @@ import {
 } from '../schema/metadata';
 
 import { 
+  SessionStore 
+} from '../session/store';
+
+import { 
+  createBlankSession 
+} from '../session/store';
+
+import { 
+  buildIntentSummary,
+  formatSummary 
+} from './intentCompiler';
+
+import { 
   getConfig 
 } from '../config';
 
@@ -65,13 +78,21 @@ import { APISearchService } from '../search';
 export class IntentEngine {
   constructor(
     private anthropic: Anthropic,
-    private searchService?: APISearchService  // optional
+    private sessionStore?: SessionStore,
+    private searchService?: APISearchService
   ) {}
 
   async execute(request: IntentRequest): Promise<IntentResult> {
     const startTime = Date.now();
     
     try {
+      // Load session if sessionId provided
+      let session: any;
+      if (request.sessionId && this.sessionStore) {
+        session = await this.sessionStore.get(request.sessionId) 
+                  ?? createBlankSession(request.sessionId);
+      }
+
       // Cache check — skip if no search service configured
       if (this.searchService) {
         const cacheResult = await this.searchService.checkCache(
@@ -111,7 +132,7 @@ export class IntentEngine {
 
       // Cache miss — continue with normal generation flow
       const schemaMetadata = getSchemaMetadata();
-      const systemPrompt = buildIntentPrompt(schemaMetadata);
+      const systemPrompt = buildIntentPrompt(schemaMetadata, session);
 
       // Step 1: Generate initial ExecutionGraph
       const messages: MessageParam[] = [
@@ -139,6 +160,52 @@ export class IntentEngine {
       }
 
       const generationMs = Date.now() - startTime;
+
+      // Add intentSummary to graph
+      if (graph.nodes[0]?.plan) {
+        const queryPlan = graph.nodes[0].plan;
+        const mockIntent: any = {
+          tables: queryPlan.entity ? [queryPlan.entity] : [],
+          filters: queryPlan.where ? [queryPlan.where] : [],
+          aggregate: queryPlan.aggregate,
+          groupBy: queryPlan.groupBy,
+          having: queryPlan.having,
+          orderBy: queryPlan.orderBy,
+          distinct: queryPlan.distinct,
+          limit: queryPlan.limit
+        };
+        graph.intentSummary = buildIntentSummary(mockIntent);
+      }
+
+      // Preview mode — save graph and return summary without executing
+      if (request.options?.preview) {
+        // Save the graph for potential execution
+        const stored = await graphRepository.save({
+          prompt: request.prompt,
+          graph,
+          generationMs,
+          executionMs: 0,
+          success: true
+        });
+
+        return {
+          graph,
+          result: {
+            graphId: graph.id,
+            success: true,
+            nodeResults: new Map(),
+            finalOutput: null,
+            totalExecutionTime: 0
+          },
+          status: 'preview',
+          intentSummary: graph.intentSummary,
+          formattedSummary: formatSummary(graph.intentSummary!),
+          generationMs,
+          executionMs: 0,
+          prompt: request.prompt,
+          storedGraphId: stored.id
+        };
+      }
 
       // Step 2: Validate graph constraints
       this.validateGraphConstraints(graph, request.options);
@@ -231,6 +298,41 @@ export class IntentEngine {
 
       // Note: We do NOT auto-index here. Indexing happens when an API is approved,
       // not when a graph is generated.
+
+      // Record turn in session after successful execution
+      if (request.sessionId && this.sessionStore && result.success) {
+        const rows = extractRows(result.finalOutput);
+        const queryPlan = graph.nodes[0]?.plan;
+        const turn = {
+          turnId: crypto.randomUUID(),
+          timestamp: Date.now(),
+          rawQuery: request.prompt,
+          intentSummary: graph.intentSummary!,
+          intent: {
+            tables: queryPlan?.entity ? [queryPlan.entity] : [],
+            filters: queryPlan?.where ? [queryPlan.where] : [],
+            aggregate: queryPlan?.aggregate ? (Array.isArray(queryPlan.aggregate) ? queryPlan.aggregate : [queryPlan.aggregate]) : undefined,
+            groupBy: queryPlan?.groupBy,
+            having: queryPlan?.having,
+            orderBy: queryPlan?.orderBy ? (Array.isArray(queryPlan.orderBy) ? queryPlan.orderBy : [queryPlan.orderBy]) : undefined,
+            distinct: queryPlan?.distinct,
+            limit: queryPlan?.limit
+          },
+          resultShape: {
+            rowCount: rows.length,
+            columns: rows.length > 0 ? Object.keys(rows[0]) : [],
+            primaryTable: queryPlan?.entity || '',
+            primaryKeyValues: rows.length > 100 
+  ? [`${rows.length} rows returned, too many to list individually — use filters to narrow down first`]
+  : rows
+      .map((r: any) => r['id'] || r[`${queryPlan?.entity || ''}_id`])
+      .filter(Boolean)
+      .slice(0, 100),
+            sampleRows: rows.slice(0, 3)
+          }
+        };
+        await this.sessionStore.appendTurn(request.sessionId, turn);
+      }
 
       return {
         graph,
@@ -412,4 +514,11 @@ Return ONLY the corrected QueryIntent JSON with no explanations or markdown fenc
     // All attempts failed
     throw new IntentParseError(`Failed to generate valid QueryIntent after ${MAX_CORRECTION_ATTEMPTS} correction attempts`, { attempts: MAX_CORRECTION_ATTEMPTS, lastError: currentError });
   }
+}
+
+function extractRows(output: any): Record<string, unknown>[] {
+  if (!output) return [];
+  if (Array.isArray(output)) return output;
+  if (output.rows && Array.isArray(output.rows)) return output.rows;
+  return [];
 }

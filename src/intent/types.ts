@@ -11,11 +11,13 @@ import { ExecutionGraph, GraphResult } from '../graph/types';
 
 export interface IntentRequest {
   prompt: string;
+  sessionId?: string;
   context?: RequestContext;
   options?: {
     maxNodes?: number;
     allowParallel?: boolean;
     dryRun?: boolean;
+    preview?: boolean;
   };
 }
 
@@ -28,6 +30,9 @@ export interface IntentResult {
   storedGraphId: string;
   cacheHit?: boolean;
   cacheScore?: number;
+  status?: 'success' | 'preview';
+  intentSummary?: ExecutionGraph['intentSummary'];
+  formattedSummary?: string;
 }
 
 export interface IntentParseResult {

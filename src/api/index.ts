@@ -66,6 +66,10 @@ export {
   apiRouter,
 } from './routes/apis';
 
+export {
+  createIntentRouter,
+} from './routes/intent';
+
 // ------------------------------------------------------------------
 // Route Registration
 // ------------------------------------------------------------------

@@ -3,8 +3,12 @@
 // ------------------------------------------------------------------
 
 import { SchemaMetadata } from '../schema/metadata';
+import { SessionContext } from '../session/types';
 
-export function buildIntentPrompt(schema: SchemaMetadata): string {
+export function buildIntentPrompt(
+  schema: SchemaMetadata,
+  session?: SessionContext
+): string {
   const today = new Date().toISOString().split('T')[0];
   const twoYearsAgo = new Date(Date.now() - (2 * 365 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0];
   
@@ -79,6 +83,55 @@ NULL / MISSING RECORD PATTERNS:
   - Primary table goes first in tables[], joined table second
   - Filter: {"field": "joinedTable.id", "op": "IS NULL"}
   - Do NOT add a "value" field for IS NULL conditions
+
+${session?.turns.length ? `
+SESSION CONTEXT (recent conversation):
+${session.turns.slice(-3).map((turn, i) => `
+Turn ${i + 1}: "${turn.rawQuery}"
+→ ${turn.intentSummary.action} ${turn.intentSummary.subject}
+${turn.intentSummary.filters?.length ? `  Filters: ${turn.intentSummary.filters.join(', ')}` : ''}
+${turn.intentSummary.metric ? `  Metric: ${turn.intentSummary.metric}` : ''}
+Result: ${turn.resultShape.rowCount} rows from ${turn.resultShape.primaryTable}
+${turn.resultShape.primaryKeyValues.length > 0 ? `  IDs: [${turn.resultShape.primaryKeyValues.slice(0,10).join(', ')}]` : ''}
+`).join('')}
+
+PRONOUN RESOLUTION RULES:
+- "those", "them", "they", "those customers/orders" → 
+  use the IDs from the most recent turn:
+  filter: { field: "${session.turns[session.turns.length - 1]?.resultShape.primaryTable}.id", 
+            op: "IN", value: [${session.turns[session.turns.length - 1]?.resultShape.primaryKeyValues.join(',')}] }
+  If the last turn shows "too many to list individually", first ask user to narrow down with filters before using pronouns.
+- "same filter", "also", "as well" → inherit filters from last turn
+- "now add", "but also", "and" → extend last turn's intent
+- "instead", "change to", "actually" → replace a specific part
+
+TERM INHERITANCE:
+If a prior turn used a vague term and a later turn gave it 
+a precise meaning, use that precise meaning going forward.
+
+Example in session:
+  Turn 1: "high value customers" → HAVING total_spent > 10000
+  Turn 2: "customers who spent more than 30000" → 
+           HAVING total_spent > 30000 (this redefines "high value")
+  Turn 3: "high value customers from Chennai" → 
+           MUST use HAVING total_spent > 30000 (from turn 2)
+           AND add WHERE customers.city = 'Chennai'
+
+CONDITION INHERITANCE:
+When a query refines a prior query, inherit all prior conditions
+unless explicitly replaced:
+- Adding a filter: keep all prior conditions + add new one
+- "only from Chennai" after a HAVING query → keep HAVING + add city
+- "make it 50000 instead" → replace just the threshold value
+- "remove the city filter" → drop only that condition
+` : ''}
+
+${session?.userDefinedTerms && Object.keys(session.userDefinedTerms).length ? `
+USER-DEFINED TERMS (use these when the term appears in queries):
+${Object.entries(session.userDefinedTerms).map(([term, def]) =>
+  `  "${term}" means: ${def.description}`
+).join('\n')}
+` : ''}
 
 EXAMPLES:
 
