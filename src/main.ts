@@ -38,12 +38,18 @@ async function main(): Promise<void> {
     const sessionStore = new SessionStore(db);
     const engine = new IntentEngine(anthropic, sessionStore);
     
+    // Generate or use existing session ID for CLI session
+    const cliSessionId = 'cli-session-' + (process.env.USER || 'default');
+    
     // console.log(`🔍 Semantic cache: ${searchService ? 'enabled' : 'disabled'}`);
-    console.log(`🧠 Intent engine: ready\n`);
+    console.log(`🧠 Intent engine: ready`);
+    console.log(`📝 Session ID: ${cliSessionId}\n`);
     
     // Start chat loop
     console.log('💬 Chat interface ready. Type "exit" to quit.');
-    console.log('📝 Supported queries: list customers/orders, filter by name/city, count orders, sum amounts, recent orders\n');
+    console.log('📝 Supported queries: list customers/orders, filter by name/city, count orders, sum amounts, recent orders');
+    console.log('🔄 Session context enabled - conversation history maintained');
+    console.log('🛠️  Commands: "clear session", "session info", "exit"\n');
     
     const readline = require('readline');
     const rl = readline.createInterface({
@@ -63,6 +69,26 @@ async function main(): Promise<void> {
           break;
         }
         
+        // Check for session management commands
+        if (userInput.toLowerCase().trim() === 'clear session') {
+          await sessionStore.delete(cliSessionId);
+          console.log('🗑️  Session cleared - conversation history reset');
+          continue;
+        }
+        
+        if (userInput.toLowerCase().trim() === 'session info') {
+          const session = await sessionStore.get(cliSessionId);
+          if (session) {
+            console.log(`📊 Session: ${cliSessionId}`);
+            console.log(`   Turns: ${session.turns.length}`);
+            console.log(`   User terms: ${Object.keys(session.userDefinedTerms).length}`);
+            console.log(`   Last activity: ${new Date(session.turns[session.turns.length - 1]?.timestamp || 0).toLocaleString()}`);
+          } else {
+            console.log('📊 No active session');
+          }
+          continue;
+        }
+        
         // Process empty input
         if (!userInput.trim()) {
           continue;
@@ -77,6 +103,7 @@ async function main(): Promise<void> {
         try {
           intentResult = await engine.execute({
             prompt: userInput,
+            sessionId: cliSessionId,
             options: { dryRun: false, allowParallel: true }
           });
         } catch (error) {
