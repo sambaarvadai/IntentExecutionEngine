@@ -98,36 +98,121 @@ export class IntentEngine {
 
       // Cache check — skip if no search service configured
       if (this.searchService) {
+        console.log('[CACHE] Checking cache for:', request.prompt);
         const cacheResult = await this.searchService.checkCache(
           request.prompt
         );
+        
+        console.log('[CACHE] Result:', JSON.stringify({
+          hit: cacheResult.hit,
+          score: cacheResult.match?.score,
+          apiId: cacheResult.match?.apiId
+        }));
         
         if (cacheResult.hit && cacheResult.match) {
           const api = cacheResult.match.api;
           const graph = (api as any).executionGraph as ExecutionGraph;
           
-          // Execute the cached graph
+          console.log(`[CACHE] HIT — score: ${cacheResult.match.score.toFixed(3)}`);
+
+          // Generate summary for the cached graph if missing
+          if (!graph.intentSummary?.plainText && session) {
+            // Use existing summary from graph or generate minimal one
+            graph.intentSummary = graph.intentSummary ?? {
+              action: '', subject: '', 
+              plainText: `Cached result for: ${request.prompt}` 
+            };
+          }
+
+          // Save graph to repository so it has a storedGraphId for execution
+          const stored = await graphRepository.save({
+            prompt: request.prompt,
+            graph,
+            generationMs: 0,
+            executionMs: 0,
+            success: true
+          });
+
+          // Preview mode — return summary without executing
+          if (request.options?.preview) {
+            return {
+              graph,
+              result: {
+                graphId: stored.id, success: true,
+                nodeResults: new Map(), finalOutput: null,
+                totalExecutionTime: 0
+              },
+              generationMs: 0,
+              executionMs: 0,
+              prompt: request.prompt,
+              storedGraphId: stored.id,
+              status: 'preview',
+              intentSummary: graph.intentSummary,
+              formattedSummary: formatSummary(graph.intentSummary),
+              cacheHit: true,
+              cacheScore: cacheResult.match.score
+            };
+          }
+
+          // Execute confirmed cached graph
           const executionStart = Date.now();
           const runtime = new GraphRuntime();
-          const result = request.options?.dryRun
-            ? { 
-                graphId: graph.id, success: true, 
-                nodeResults: new Map(), finalOutput: null, 
-                totalExecutionTime: 0 
+          const result = await runtime.execute(graph, {
+            maxParallelNodes: request.options?.allowParallel ? 5 : 1,
+            dryRun: false
+          });
+          const executionMs = Date.now() - executionStart;
+
+          // Record turn in session — same as normal path
+          if (request.sessionId && this.sessionStore && result.success) {
+            const rows = extractRows(result.finalOutput);
+            const queryPlan = graph.nodes[0]?.plan;
+            const turn = {
+              turnId: crypto.randomUUID(),
+              timestamp: Date.now(),
+              rawQuery: request.prompt,
+              intentSummary: graph.intentSummary!,
+              intent: {
+                tables: queryPlan?.entity ? [queryPlan.entity] : [],
+                filters: queryPlan?.where ?? [],
+                aggregate: queryPlan?.aggregate 
+                  ? (Array.isArray(queryPlan.aggregate) 
+                      ? queryPlan.aggregate 
+                      : [queryPlan.aggregate]) 
+                  : undefined,
+                groupBy: queryPlan?.groupBy,
+                having: queryPlan?.having,
+                orderBy: queryPlan?.orderBy 
+                  ? (Array.isArray(queryPlan.orderBy) 
+                      ? queryPlan.orderBy 
+                      : [queryPlan.orderBy]) 
+                  : undefined,
+                distinct: queryPlan?.distinct,
+                limit: queryPlan?.limit
+              },
+              resultShape: {
+                rowCount: rows.length,
+                columns: rows.length > 0 ? Object.keys(rows[0]) : [],
+                primaryTable: queryPlan?.entity ?? '',
+                primaryKeyValues: rows
+                  .map((r: any) => r['id'])
+                  .filter(Boolean)
+                  .slice(0, 100),
+                sampleRows: rows.slice(0, 3)
               }
-            : await runtime.execute(graph, {
-                maxParallelNodes: request.options?.allowParallel ? 5 : 1,
-                dryRun: false
-              });
+            };
+            await this.sessionStore.appendTurn(request.sessionId, turn);
+          }
 
           return {
             graph,
             result,
-            generationMs: 0,            // no generation needed
-            executionMs: Date.now() - executionStart,
+            generationMs: 0,
+            executionMs,
             prompt: request.prompt,
-            storedGraphId: api.id,
-            cacheHit: true,             // add to IntentResult
+            storedGraphId: stored.id,
+            status: 'success',
+            cacheHit: true,
             cacheScore: cacheResult.match.score
           };
         }
@@ -154,6 +239,26 @@ export class IntentEngine {
         intent = result.intent; // Capture the intent
         
         console.log('[DEBUG] generated graph:', JSON.stringify(graph, null, 2));
+        
+        // Handle conversational responses
+        if (intent.conversational) {
+          return {
+            graph: null as any,
+            result: {
+              graphId: 'conversational',
+              success: true,
+              nodeResults: new Map(),
+              finalOutput: intent.conversationalResponse 
+                           ?? 'How can I help you?',
+              totalExecutionTime: 0
+            },
+            generationMs: Date.now() - startTime,
+            executionMs: 0,
+            prompt: request.prompt,
+            storedGraphId: '',
+            status: 'success'
+          };
+        }
       } catch (error) {
         if (error instanceof IntentParseError) {
           const correctionResult = await this.correctGraph(messages, error, systemPrompt, schemaMetadata, error.rawText ?? '');

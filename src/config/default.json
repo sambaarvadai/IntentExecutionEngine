@@ -18,5 +18,10 @@
     "enabled": true,
     "maxCorrectionAttempts": 3,
     "enableResponseReframing": true
+  },
+  "session": {
+    "maxAgeMs": 86400000,
+    "cleanupIntervalMs": 3600000,
+    "pendingTurnExpiryMs": 600000
   }
 }

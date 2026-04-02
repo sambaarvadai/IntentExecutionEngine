@@ -21,5 +21,6 @@ export interface QueryIntent {
   }[]
   having?: { field: string; op: string; value: unknown }[]  // filters on aggregate results
   limit?: number
-  conversational?: boolean   // true if query is not a DB query
+  conversational?: boolean,   // true if query is not a DB query
+  conversationalResponse?: string  // friendly reply when conversational: true
 }

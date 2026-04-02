@@ -59,7 +59,7 @@ export class VoyageEmbeddings {
       body: JSON.stringify({
         input: [text],
         model: this.model,
-        input_type: 'document'
+        input_type: 'query'   // Use 'query' for symmetric embeddings
       })
     });
 

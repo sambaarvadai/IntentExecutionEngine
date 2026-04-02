@@ -6,7 +6,8 @@ import {
   SIMILARITY_THRESHOLD 
 } from './types';
 import { APIDefinition } from '../context/types';
-import { apiRegistry } from '../api';
+import { apiRegistry } from '../api/registry';
+import { graphRepository } from '../graph/store';
 
 export class APISearchService {
   constructor(
@@ -34,25 +35,59 @@ export class APISearchService {
 
     // Embed the incoming prompt
     const queryEmbedding = await this.embeddings.embed(prompt);
+    console.log('[CACHE] Query embedding shape:', queryEmbedding.embedding.length);
 
     // Search for similar APIs
     const results = await this.vectorStore.search(
       queryEmbedding.embedding,
       5   // top 5 candidates
     );
+    
+    console.log('[CACHE] Search results:', JSON.stringify(results, null, 2));
 
     // Filter to hits above threshold
     const hit = results.find(r => r.score >= SIMILARITY_THRESHOLD);
+    console.log('[CACHE] Threshold:', SIMILARITY_THRESHOLD, 'Best score:', results[0]?.score);
 
     if (!hit) {
       return { hit: false, searchTimeMs: Date.now() - start };
     }
 
-    // Load the full API from registry
-    const api = await apiRegistry.get(hit.apiId).catch(() => null);
+    // Try registry first (fast, in-memory)
+    let api = await apiRegistry.get(hit.apiId).catch(() => null);
     
-    // Verify it's still ACTIVE (may have been deprecated since indexing)
-    if (!api || api.status !== 'ACTIVE') {
+    // Registry miss — look up from graph store using metadata
+    if (!api) {
+      // ChromaDB metadata has the route and label stored
+      // Reconstruct minimal API definition from metadata + graph store
+      const graphId = hit.metadata?.planId ?? hit.apiId;
+      const storedGraph = await graphRepository.findById(graphId)
+                           .catch(() => null);
+      
+      if (!storedGraph || storedGraph.status !== 'approved') {
+        return { hit: false, searchTimeMs: Date.now() - start };
+      }
+
+      // Rebuild API definition from stored graph
+      api = {
+        id: hit.apiId,
+        route: hit.metadata?.route ?? `/api/query/${graphId}`,
+        method: 'POST',
+        planId: graphId,
+        label: hit.metadata?.label ?? storedGraph.prompt,
+        status: 'ACTIVE',
+        createdAt: new Date(storedGraph.createdAt),
+        updatedAt: new Date(storedGraph.updatedAt),
+        executionGraph: JSON.parse(storedGraph.graphJson)
+      };
+      
+      // Re-register in memory so next hit is instant
+      try {
+        await apiRegistry.register(api);
+      } catch { /* already registered */ }
+    }
+
+    if (!api) {
       return { hit: false, searchTimeMs: Date.now() - start };
     }
 
@@ -69,11 +104,8 @@ export class APISearchService {
   }
 
   private buildIndexText(api: APIDefinition): string {
-    const parts = [
-      api.label,
-      api.description ?? '',
-      ...((api as any).generatingPrompts ?? [])
-    ].filter(Boolean);
-    return parts.join('. ');
+    const prompts = (api as any).generatingPrompts ?? [];
+    if (prompts.length > 0) return prompts.join('. ');
+    return api.label ?? '';
   }
 }

@@ -14,6 +14,8 @@ import { GraphRuntime } from '../src/graph/runtime';
 import { TurnRecord } from '../src/session/types';
 import { formatSummary } from '../src/intent/intentCompiler';
 import { getConfig } from '../src/config';
+import { APISearchService } from '../src/search';
+import { createSearchService } from '../src/search';
 
 // Load environment variables
 dotenv.config();
@@ -34,7 +36,29 @@ async function initializeServer() {
   const db = await getDatabase();
   const sessionStore = new SessionStore(db);
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const intentEngine = new IntentEngine(anthropic, sessionStore);
+  
+  // Initialize search service first
+  let searchService: APISearchService | undefined;
+  const voyageKey = process.env.VOYAGE_API_KEY;
+  const chromaUrl = process.env.CHROMA_URL ?? 'http://localhost:8000';
+  
+  console.log('[SEARCH] VOYAGE_API_KEY set:', !!voyageKey);
+  console.log('[SEARCH] CHROMA_URL:', chromaUrl);
+  
+  if (voyageKey) {
+    try {
+      searchService = createSearchService(voyageKey, chromaUrl);
+      await searchService.init();
+      console.log('[SEARCH] ✅ Search service initialized');
+    } catch (err) {
+      console.error('[SEARCH] ❌ Failed to initialize:', err);
+    }
+  } else {
+    console.warn('[SEARCH] ⚠️  VOYAGE_API_KEY not set — search disabled');
+  }
+
+  // Now pass searchService to engine
+  const intentEngine = new IntentEngine(anthropic, sessionStore, searchService);
   
   // Register intent routes
   // Note: We're using direct Express routes below instead of custom router
@@ -204,6 +228,58 @@ async function initializeServer() {
     }
   });
 
+  // POST /api/graphs/:id/promote - Promote approved graph to API
+  app.post('/api/graphs/:id/promote', async (req: any, res: any) => {
+    const { id } = req.params;
+    const { label, route, method = 'POST' } = req.body ?? {};
+
+    try {
+      const storedGraph = await graphRepository.findById(id);
+      if (!storedGraph) {
+        return res.status(404).json({ error: 'Graph not found' });
+      }
+      if (storedGraph.status !== 'approved') {
+        return res.status(403).json({ 
+          error: 'Graph must be approved before promoting to API' 
+        });
+      }
+
+      const graph = JSON.parse(storedGraph.graphJson);
+
+      // Register in API registry
+      const { apiRegistry } = await import('../src/api/registry');
+      const api = await apiRegistry.register({
+        route: route ?? `/api/query/${id}`,
+        method,
+        planId: id,
+        label: label ?? storedGraph.prompt,
+        description: graph.intentSummary?.plainText ?? storedGraph.prompt,
+        status: 'ACTIVE',
+        executionGraph: graph,
+        generatingPrompts: [storedGraph.prompt]
+      });
+
+      // Index in ChromaDB for semantic cache
+      if (searchService) {
+        await searchService.indexAPI(api);
+        console.log(`[SEARCH] Indexed: ${api.id} — "${api.label}"`);
+      }
+
+      return res.json({ 
+        status: 'promoted',
+        apiId: api.id,
+        route: api.route,
+        label: api.label,
+        indexed: !!searchService
+      });
+
+    } catch (error) {
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : String(error) 
+      });
+    }
+  });
+  
   // DELETE /api/session/:sessionId - Explicit session deletion
   app.delete('/api/session/:sessionId', async (req: any, res: any) => {
     try {
@@ -240,7 +316,8 @@ async function initializeServer() {
     console.log('  POST /api/intent/execute - Execute stored graph');
     console.log('  POST /api/graphs/validate - Validate intent');
     console.log('  GET  /api/graphs/:id - Get graph by ID');
-    console.log('  PATCH /api/graphs/:id/status - Update graph status');
+    console.log('  POST /api/graphs/:id/promote - Promote graph to API');
+    console.log('  PATCH /api/graphs/:id/status - Approve/reject graph');
     console.log('  GET  /api/graphs/stats - Get graph statistics');
     console.log('  GET  /api/apis - List APIs');
     console.log('  GET  /api/apis/:id - Get API by ID');

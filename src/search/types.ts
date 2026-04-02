@@ -25,4 +25,4 @@ export interface CacheCheckResult {
   searchTimeMs: number
 }
 
-export const SIMILARITY_THRESHOLD = 0.92  // tune this
+export const SIMILARITY_THRESHOLD = 0.90  // tune this - restored for high precision

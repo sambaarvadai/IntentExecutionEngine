@@ -36,7 +36,8 @@ Return ONLY this JSON shape:
   "distinct": boolean,   // optional, for SELECT DISTINCT
   "aggregate": [{ "type": "sum|count|avg|min|max", "field": "...", "alias": "..." }], // optional, for aggregation
   "having": [{ "field": "alias_or_expression", "op": ">", "value": ... }]  // optional, filters on aggregate results (post-GROUP BY)
-  "conversational": boolean
+  "conversational": boolean,
+  "conversationalResponse": string  // only when conversational: true
 }
 
 FILTER OPERATORS:
@@ -48,8 +49,9 @@ RULES:
 - For temporal filters use ISO date strings
 - For "last N years/months/days" compute from today: ${today}
 - tables[] order matters: primary table first, joined tables after
-- If query is a greeting or conversation, set conversational: true
-  and leave other fields empty
+- If query is a greeting, thanks, or casual conversation,
+    set conversational: true and populate conversationalResponse
+    with a brief, friendly reply (1-2 sentences max)
 
 MULTIPLE VALUES ON SAME FIELD:
 - When matching one field against multiple possible values,
@@ -188,5 +190,5 @@ EXAMPLES:
     }
 
 "hello there"
-→ { "conversational": true }`;
+→ { "conversational": true, "conversationalResponse": "Hello! How can I help you today?" }`;
 }

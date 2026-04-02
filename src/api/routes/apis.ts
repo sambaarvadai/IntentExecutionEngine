@@ -4,7 +4,7 @@
 
 import { apiRegistry } from '../registry';
 import { APIDefinition, APIStatus } from '../../context/types';
-import { createSearchService } from '../../search';
+import { createSearchService } from '../../search/factory';
 
 // Initialize search service
 const searchService = createSearchService(

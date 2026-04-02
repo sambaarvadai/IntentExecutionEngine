@@ -31,22 +31,23 @@ async function main(): Promise<void> {
       apiKey: process.env.ANTHROPIC_API_KEY 
     });
     
-    // const searchService = process.env.VOYAGE_API_KEY
-    //   ? createSearchService()
-    //   : undefined;
+    const searchService = process.env.VOYAGE_API_KEY
+      ? createSearchService(process.env.VOYAGE_API_KEY)
+      : undefined;
     
-    // if (searchService) await searchService.init();
+    if (searchService) await searchService.init();
     
     const db = await getDatabase();
     const sessionStore = new SessionStore(db);
-    const engine = new IntentEngine(anthropic, sessionStore);
+    const engine = new IntentEngine(anthropic, sessionStore, searchService);
     
     // Generate or use existing session ID for CLI session
     const cliSessionId = 'cli-session-' + (process.env.USER || 'default');
     
     // console.log(`🔍 Semantic cache: ${searchService ? 'enabled' : 'disabled'}`);
     console.log(`🧠 Intent engine: ready`);
-    console.log(`📝 Session ID: ${cliSessionId}\n`);
+    console.log(`� Semantic cache: ${searchService ? 'enabled' : 'disabled'}`);
+    console.log(`�📝 Session ID: ${cliSessionId}\n`);
     
     // Start chat loop
     console.log('💬 Chat interface ready. Type "exit" to quit.');
