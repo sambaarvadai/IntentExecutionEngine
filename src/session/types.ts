@@ -1,6 +1,7 @@
 export interface TurnRecord {
   turnId: string
   timestamp: number
+  expiresAt?: number // For pending turns - auto-expire after inactivity
   rawQuery: string
   intentSummary: {
     action: string

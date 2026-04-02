@@ -13,6 +13,7 @@ import { ExecutionGraph } from '../src/graph/types';
 import { GraphRuntime } from '../src/graph/runtime';
 import { TurnRecord } from '../src/session/types';
 import { formatSummary } from '../src/intent/intentCompiler';
+import { getConfig } from '../src/config';
 
 // Load environment variables
 dotenv.config();
@@ -26,6 +27,9 @@ app.use(express.json());
 
 // Initialize services and routes
 async function initializeServer() {
+  // Load configuration
+  const config = getConfig();
+  
   // Initialize database and services
   const db = await getDatabase();
   const sessionStore = new SessionStore(db);
@@ -38,11 +42,11 @@ async function initializeServer() {
   
   console.log(`[DEBUG] Using direct Express routes for intent endpoints`);
   
-  // Run cleanup every hour, drop sessions inactive > 24 hours
+  // Run cleanup on configurable schedule, drop sessions inactive > maxAgeMs
   setInterval(async () => {
-    const dropped = await sessionStore.cleanup(24 * 60 * 60 * 1000);
+    const dropped = await sessionStore.cleanup(config.session.maxAgeMs);
     if (dropped > 0) console.log(`Dropped ${dropped} stale sessions`);
-  }, 60 * 60 * 1000);
+  }, config.session.cleanupIntervalMs);
   
   // Register API routes using custom registration
   registerRoutes(app);
@@ -189,6 +193,30 @@ async function initializeServer() {
     } catch (error) {
       return res.status(500).json({
         error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  // DELETE /api/session/:sessionId - Explicit session deletion
+  app.delete('/api/session/:sessionId', async (req: any, res: any) => {
+    try {
+      const { sessionId } = req.params;
+      
+      if (!sessionId) {
+        return res.status(400).json({
+          error: 'sessionId is required'
+        });
+      }
+
+      await sessionStore.delete(sessionId);
+      
+      res.json({
+        status: 'success',
+        message: `Session ${sessionId} deleted`
+      });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   });

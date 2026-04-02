@@ -26,7 +26,26 @@ export class SessionStore {
     if (!row) return null;
     
     try {
-      return JSON.parse((row as any).data);
+      const ctx = JSON.parse(row.data as string) as SessionContext;
+      
+      // Auto-delete stale sessions (automatic cleanup based on session age)
+      const lastActivity = ctx.turns[ctx.turns.length - 1]?.timestamp ?? 0;
+      const sessionAgeMs = Date.now() - lastActivity;
+      const maxAgeMs = 24 * 60 * 60 * 1000; // 24 hours default
+      
+      if (sessionAgeMs > maxAgeMs) {
+        await this.delete(sessionId);
+        return null; // Caller creates a fresh blank session
+      }
+      
+      // Clean expired pending turns
+      const now = Date.now();
+      const pendingTurnExpiryMs = 10 * 60 * 1000; // 10 minutes default
+      ctx.turns = ctx.turns.filter(turn => 
+        !turn.expiresAt || turn.expiresAt > now
+      );
+      
+      return ctx;
     } catch {
       return null;
     }
@@ -86,7 +105,7 @@ export class SessionStore {
     await stmt.finalize();
   }
 
-  async cleanup(maxAgeMs: number): Promise<number> {
+  async cleanup(maxAgeMs: number = 24 * 60 * 60 * 1000): Promise<number> {
     const cutoffTime = Date.now() - maxAgeMs;
     const stmt = await this.db.prepare(
       'DELETE FROM nl2db_sessions WHERE updated_at < ?'

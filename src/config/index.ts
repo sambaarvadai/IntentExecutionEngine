@@ -29,11 +29,18 @@ export interface SchemaConfig {
   joins: Record<string, any>;
 }
 
+export interface SessionConfig {
+  maxAgeMs: number;
+  cleanupIntervalMs: number;
+  pendingTurnExpiryMs: number;
+}
+
 export interface Config {
   database: DatabaseConfig;
   llm: LLMConfig;
   app: AppConfig;
   pipeline: PipelineConfig;
+  session: SessionConfig;
 }
 
 let config: Config | null = null;
@@ -105,6 +112,11 @@ function getDefaultConfig(): Config {
       enabled: false,
       maxCorrectionAttempts: 3,
       enableResponseReframing: true
+    },
+    session: {
+      maxAgeMs: parseInt(process.env.SESSION_MAX_AGE_MS ?? '86400000'), // 24 hours
+      cleanupIntervalMs: parseInt(process.env.SESSION_CLEANUP_MS ?? '3600000'), // 1 hour
+      pendingTurnExpiryMs: parseInt(process.env.PENDING_TURN_EXPIRY_MS ?? '600000') // 10 minutes
     }
   };
 }

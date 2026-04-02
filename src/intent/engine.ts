@@ -53,6 +53,10 @@ import {
 } from '../session/store';
 
 import { 
+  TurnRecord 
+} from '../session/types';
+
+import { 
   createBlankSession 
 } from '../session/store';
 
@@ -187,6 +191,39 @@ export class IntentEngine {
           executionMs: 0,
           success: true
         });
+
+        // Create a pending turn with expiry for preview
+        const pendingTurn: TurnRecord = {
+          turnId: crypto.randomUUID(),
+          timestamp: Date.now(),
+          expiresAt: Date.now() + (10 * 60 * 1000), // 10 minutes from now
+          rawQuery: request.prompt,
+          intentSummary: graph.intentSummary!,
+          intent: {
+            tables: graph.nodes[0]?.plan?.entity ? [graph.nodes[0].plan.entity] : [],
+            filters: graph.nodes[0]?.plan?.where || [],
+            aggregate: graph.nodes[0]?.plan?.aggregate ? 
+              (Array.isArray(graph.nodes[0].plan.aggregate) ? graph.nodes[0].plan.aggregate : [graph.nodes[0].plan.aggregate]) : undefined,
+            groupBy: graph.nodes[0]?.plan?.groupBy,
+            having: graph.nodes[0]?.plan?.having,
+            orderBy: graph.nodes[0]?.plan?.orderBy ? 
+              (Array.isArray(graph.nodes[0].plan.orderBy) ? graph.nodes[0].plan.orderBy : [graph.nodes[0].plan.orderBy]) : undefined,
+            distinct: graph.nodes[0]?.plan?.distinct,
+            limit: graph.nodes[0]?.plan?.limit
+          },
+          resultShape: {
+            rowCount: 0,
+            columns: [],
+            primaryTable: graph.nodes[0]?.plan?.entity || 'unknown',
+            primaryKeyValues: [],
+            sampleRows: []
+          }
+        };
+
+        // Record pending turn if sessionId provided
+        if (request.sessionId && this.sessionStore) {
+          await this.sessionStore.appendTurn(request.sessionId, pendingTurn);
+        }
 
         return {
           graph,
