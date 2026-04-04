@@ -10,6 +10,7 @@ export interface LLMConfig {
   provider: string;
   model: string;
   summaryModel: string;
+  tableSelectorModel: string;
   maxTokens: number;
 }
 
@@ -103,6 +104,7 @@ function getDefaultConfig(): Config {
       provider: 'anthropic',
       model: 'claude-3-haiku-20240307',
       summaryModel: 'claude-3-haiku-20240307',
+      tableSelectorModel: 'claude-3-haiku-20240307',
       maxTokens: 1000
     },
     app: {

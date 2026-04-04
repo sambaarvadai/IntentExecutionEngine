@@ -18,6 +18,9 @@ import {
   QueryIntent 
 } from './intentTypes';
 
+import { selectRelevantTables, createSchemaContext, sliceSchema } from '../tableSelector';
+import { getSchemaConfig } from '../config';
+
 import { 
   compileIntent 
 } from './intentCompiler';
@@ -269,6 +272,22 @@ export class IntentEngine {
           throw error;
         }
       }
+
+      // At this point, we know it's not conversational - proceed with table selection
+      // Table selection using Haiku - narrow schema exposure
+      const fullSchema = createSchemaContext(getSchemaConfig());
+      const sessionTurns = session ? session.turns : [];
+      const selectedTables = await selectRelevantTables(
+        request.prompt,
+        fullSchema,
+        sessionTurns,
+        this.anthropic,
+        { maxTables: 6 }
+      );
+      
+      const slicedSchema = sliceSchema(fullSchema, selectedTables);
+      console.log(`[TABLE_SELECTOR] Selected ${selectedTables.length} tables: [${selectedTables.join(', ')}]`);
+      console.log(`[TABLE_SELECTOR] Schema reduced from ${Object.keys(fullSchema.tables).length} to ${Object.keys(slicedSchema.tables).length} tables`);
 
       const generationMs = Date.now() - startTime;
 

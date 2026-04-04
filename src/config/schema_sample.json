@@ -1,0 +1,40 @@
+{
+  "dateFormat": "ISO8601",
+  "dateExample": "2024-01-15T10:30:00Z",
+  "tables": {
+    "customers": {
+      "fields": {
+        "id": { "type": "integer", "filterable": true, "selectable": true, "sortable": true },
+        "name": { "type": "text", "filterable": true, "selectable": true, "sortable": true },
+        "city": { "type": "text", "filterable": true, "selectable": true, "sortable": true }
+      },
+      "primaryKey": "id"
+    },
+    "orders": {
+      "fields": {
+        "id": { "type": "integer", "filterable": true, "selectable": true, "sortable": true },
+        "customer_id": { "type": "integer", "filterable": true, "selectable": true, "sortable": true },
+        "item": { "type": "text", "filterable": true, "selectable": true, "sortable": true },
+        "amount": { "type": "real", "filterable": true, "selectable": true, "sortable": true },
+        "created_at": { 
+          "type": "text", 
+          "format": "ISO8601",
+          "example": "2024-01-15T10:30:00Z",
+          "filterable": true, 
+          "selectable": true, 
+          "sortable": true 
+        }
+      },
+      "primaryKey": "id",
+      "foreignKeys": [
+        {
+          "field": "customer_id",
+          "references": {
+            "table": "customers",
+            "field": "id"
+          }
+        }
+      ]
+    }
+  }
+}

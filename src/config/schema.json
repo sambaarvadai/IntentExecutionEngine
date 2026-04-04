@@ -2,38 +2,915 @@
   "dateFormat": "ISO8601",
   "dateExample": "2024-01-15T10:30:00Z",
   "tables": {
-    "customers": {
-      "fields": {
-        "id": { "type": "integer", "filterable": true, "selectable": true, "sortable": true },
-        "name": { "type": "text", "filterable": true, "selectable": true, "sortable": true },
-        "city": { "type": "text", "filterable": true, "selectable": true, "sortable": true }
-      },
-      "primaryKey": "id"
-    },
-    "orders": {
-      "fields": {
-        "id": { "type": "integer", "filterable": true, "selectable": true, "sortable": true },
-        "customer_id": { "type": "integer", "filterable": true, "selectable": true, "sortable": true },
-        "item": { "type": "text", "filterable": true, "selectable": true, "sortable": true },
-        "amount": { "type": "real", "filterable": true, "selectable": true, "sortable": true },
-        "created_at": { 
-          "type": "text", 
-          "format": "ISO8601",
-          "example": "2024-01-15T10:30:00Z",
-          "filterable": true, 
-          "selectable": true, 
-          "sortable": true 
-        }
-      },
+    "workspaces": {
+      "description": "Top-level tenant/organisation unit; all data is scoped to a workspace",
       "primaryKey": "id",
+      "fields": {
+        "id":         { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "name":       { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "slug":       { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "plan":       { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "status":     { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                        "allowedValues": ["active", "suspended", "cancelled"] },
+        "created_at": { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "updated_at": { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      }
+    },
+
+    "users": {
+      "description": "CRM users (sales reps, managers, admins) who belong to a workspace",
+      "primaryKey": "id",
+      "fields": {
+        "id":              { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":    { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "first_name":      { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "last_name":       { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "email":           { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "phone":           { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "status":          { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                             "allowedValues": ["active", "invited", "disabled"] },
+        "last_login_at":   { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "created_at":      { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "updated_at":      { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
       "foreignKeys": [
-        {
-          "field": "customer_id",
-          "references": {
-            "table": "customers",
-            "field": "id"
-          }
-        }
+        { "field": "workspace_id", "references": { "table": "workspaces", "field": "id" } }
+      ]
+    },
+
+    "teams": {
+      "description": "Groups of users within a workspace, each optionally managed by a user",
+      "primaryKey": "id",
+      "fields": {
+        "id":              { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":    { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "name":            { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "manager_user_id": { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "created_at":      { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "updated_at":      { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id",    "references": { "table": "workspaces", "field": "id" } },
+        { "field": "manager_user_id", "references": { "table": "users",      "field": "id" } }
+      ]
+    },
+
+    "roles": {
+      "description": "Permission roles that can be assigned to workspace members",
+      "primaryKey": "id",
+      "fields": {
+        "id":           { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id": { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "name":         { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "description":  { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "created_at":   { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id", "references": { "table": "workspaces", "field": "id" } }
+      ]
+    },
+
+    "user_workspace_memberships": {
+      "description": "Junction table linking users to workspaces with an assigned role and team",
+      "primaryKey": "id",
+      "fields": {
+        "id":           { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "user_id":      { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "workspace_id": { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "role_id":      { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "team_id":      { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "is_active":    { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false,
+                          "allowedValues": [0, 1] },
+        "created_at":   { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "user_id",      "references": { "table": "users",      "field": "id" } },
+        { "field": "workspace_id", "references": { "table": "workspaces", "field": "id" } },
+        { "field": "role_id",      "references": { "table": "roles",      "field": "id" } },
+        { "field": "team_id",      "references": { "table": "teams",      "field": "id" } }
+      ]
+    },
+
+    "accounts": {
+      "description": "Companies or organisations tracked in the CRM (prospects, customers, partners)",
+      "primaryKey": "id",
+      "fields": {
+        "id":                    { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":          { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "owner_user_id":         { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "name":                  { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "legal_name":            { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "website":               { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "industry":              { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "employee_count":        { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "annual_revenue":        { "type": "real",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "phone":                 { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "email":                 { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "billing_city":          { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "billing_state":         { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "billing_country":       { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "shipping_city":         { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "shipping_state":        { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "shipping_country":      { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "description":           { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "status":                { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                   "allowedValues": ["prospect", "customer", "partner", "inactive"] },
+        "source":                { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "created_at":            { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "updated_at":            { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "deleted_at":            { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": false }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id",  "references": { "table": "workspaces", "field": "id" } },
+        { "field": "owner_user_id", "references": { "table": "users",      "field": "id" } }
+      ]
+    },
+
+    "contacts": {
+      "description": "Individual people tracked in the CRM, optionally linked to an account",
+      "primaryKey": "id",
+      "fields": {
+        "id":                 { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":       { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "owner_user_id":      { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "primary_account_id": { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "first_name":         { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "last_name":          { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "full_name":          { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "job_title":          { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "email":              { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "alternate_email":    { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "phone":              { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "mobile":             { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "linkedin_url":       { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "department":         { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "birthday":           { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": false },
+        "city":               { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "state":              { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "country":            { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "lifecycle_stage":    { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                "allowedValues": ["lead", "mql", "sql", "opportunity", "customer", "evangelist"] },
+        "source":             { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "description":        { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "created_at":         { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "updated_at":         { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "deleted_at":         { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": false }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id",       "references": { "table": "workspaces", "field": "id" } },
+        { "field": "owner_user_id",      "references": { "table": "users",      "field": "id" } },
+        { "field": "primary_account_id", "references": { "table": "accounts",   "field": "id" } }
+      ]
+    },
+
+    "contact_account_links": {
+      "description": "Many-to-many junction linking contacts to additional accounts beyond their primary account",
+      "primaryKey": "id",
+      "fields": {
+        "id":                { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":      { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "contact_id":        { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "account_id":        { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "relationship_type": { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "is_primary":        { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false,
+                               "allowedValues": [0, 1] },
+        "created_at":        { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id", "references": { "table": "workspaces", "field": "id" } },
+        { "field": "contact_id",   "references": { "table": "contacts",   "field": "id" } },
+        { "field": "account_id",   "references": { "table": "accounts",   "field": "id" } }
+      ]
+    },
+
+    "leads": {
+      "description": "Unqualified inbound prospects; can be converted to contacts, accounts, and opportunities",
+      "primaryKey": "id",
+      "fields": {
+        "id":                       { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":             { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "owner_user_id":            { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "first_name":               { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "last_name":                { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "company_name":             { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "title":                    { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "email":                    { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "phone":                    { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "website":                  { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "source":                   { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "status":                   { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                      "allowedValues": ["new", "working", "qualified", "disqualified"] },
+        "score":                    { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "estimated_value":          { "type": "real",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "notes":                    { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "converted_contact_id":     { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "converted_account_id":     { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "converted_opportunity_id": { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "converted_at":             { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "created_at":               { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "updated_at":               { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id",             "references": { "table": "workspaces",   "field": "id" } },
+        { "field": "owner_user_id",            "references": { "table": "users",        "field": "id" } },
+        { "field": "converted_contact_id",     "references": { "table": "contacts",     "field": "id" } },
+        { "field": "converted_account_id",     "references": { "table": "accounts",     "field": "id" } },
+        { "field": "converted_opportunity_id", "references": { "table": "opportunities","field": "id" } }
+      ]
+    },
+
+    "pipelines": {
+      "description": "Sales or process pipelines that group stages and opportunities",
+      "primaryKey": "id",
+      "fields": {
+        "id":           { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id": { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "name":         { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "type":         { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                          "allowedValues": ["sales", "onboarding", "renewals", "support"] },
+        "is_default":   { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false,
+                          "allowedValues": [0, 1] },
+        "created_at":   { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "updated_at":   { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id", "references": { "table": "workspaces", "field": "id" } }
+      ]
+    },
+
+    "pipeline_stages": {
+      "description": "Ordered stages within a pipeline, with win/loss flags and probability",
+      "primaryKey": "id",
+      "fields": {
+        "id":                  { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "pipeline_id":         { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "name":                { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "stage_order":         { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "probability_percent": { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "is_closed_won":       { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false,
+                                 "allowedValues": [0, 1] },
+        "is_closed_lost":      { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false,
+                                 "allowedValues": [0, 1] },
+        "created_at":          { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "pipeline_id", "references": { "table": "pipelines", "field": "id" } }
+      ]
+    },
+
+    "opportunities": {
+      "description": "Deals being pursued, linked to an account, pipeline stage, and owner",
+      "primaryKey": "id",
+      "fields": {
+        "id":                   { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":         { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "pipeline_id":          { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "stage_id":             { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "owner_user_id":        { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "account_id":           { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "primary_contact_id":   { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "name":                 { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "description":          { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "amount":               { "type": "real",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "currency_code":        { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "probability_percent":  { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "expected_close_date":  { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "actual_close_date":    { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "status":               { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                  "allowedValues": ["open", "won", "lost", "abandoned"] },
+        "loss_reason":          { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "source":               { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "created_at":           { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "updated_at":           { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "deleted_at":           { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": false }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id",       "references": { "table": "workspaces",     "field": "id" } },
+        { "field": "pipeline_id",        "references": { "table": "pipelines",      "field": "id" } },
+        { "field": "stage_id",           "references": { "table": "pipeline_stages","field": "id" } },
+        { "field": "owner_user_id",      "references": { "table": "users",          "field": "id" } },
+        { "field": "account_id",         "references": { "table": "accounts",       "field": "id" } },
+        { "field": "primary_contact_id", "references": { "table": "contacts",       "field": "id" } }
+      ]
+    },
+
+    "opportunity_stage_history": {
+      "description": "Audit log of stage transitions for each opportunity",
+      "primaryKey": "id",
+      "fields": {
+        "id":                  { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "opportunity_id":      { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "from_stage_id":       { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "to_stage_id":         { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "changed_by_user_id":  { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "changed_at":          { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "opportunity_id",     "references": { "table": "opportunities",  "field": "id" } },
+        { "field": "from_stage_id",      "references": { "table": "pipeline_stages","field": "id" } },
+        { "field": "to_stage_id",        "references": { "table": "pipeline_stages","field": "id" } },
+        { "field": "changed_by_user_id", "references": { "table": "users",          "field": "id" } }
+      ]
+    },
+
+    "assignments_history": {
+      "description": "Tracks reassignment of any entity (lead, contact, opportunity, etc.) from one user to another",
+      "primaryKey": "id",
+      "fields": {
+        "id":                  { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":        { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "entity_type":         { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                 "allowedValues": ["lead","contact","account","opportunity","ticket","task"] },
+        "entity_id":           { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "from_user_id":        { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "to_user_id":          { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "changed_by_user_id":  { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "changed_at":          { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id",       "references": { "table": "workspaces", "field": "id" } },
+        { "field": "from_user_id",       "references": { "table": "users",      "field": "id" } },
+        { "field": "to_user_id",         "references": { "table": "users",      "field": "id" } },
+        { "field": "changed_by_user_id", "references": { "table": "users",      "field": "id" } }
+      ]
+    },
+
+    "products": {
+      "description": "Product or service catalogue items with pricing",
+      "primaryKey": "id",
+      "fields": {
+        "id":            { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":  { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "sku":           { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "name":          { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "description":   { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "unit_price":    { "type": "real",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "currency_code": { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "is_active":     { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false,
+                           "allowedValues": [0, 1] },
+        "created_at":    { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "updated_at":    { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id", "references": { "table": "workspaces", "field": "id" } }
+      ]
+    },
+
+    "opportunity_products": {
+      "description": "Line items linking products to opportunities with quantity and pricing overrides",
+      "primaryKey": "id",
+      "fields": {
+        "id":               { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "opportunity_id":   { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "product_id":       { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "quantity":         { "type": "real",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "unit_price":       { "type": "real",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "discount_percent": { "type": "real",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "tax_percent":      { "type": "real",    "filterable": true,  "selectable": true,  "sortable": false },
+        "line_total":       { "type": "real",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "created_at":       { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "opportunity_id", "references": { "table": "opportunities", "field": "id" } },
+        { "field": "product_id",     "references": { "table": "products",      "field": "id" } }
+      ]
+    },
+
+    "quotes": {
+      "description": "Formal price quotes sent to accounts, optionally tied to an opportunity",
+      "primaryKey": "id",
+      "fields": {
+        "id":                 { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":       { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "opportunity_id":     { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "account_id":         { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "contact_id":         { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "quote_number":       { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "status":             { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                "allowedValues": ["draft", "sent", "accepted", "rejected", "expired"] },
+        "issue_date":         { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "expiry_date":        { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "subtotal":           { "type": "real",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "discount_total":     { "type": "real",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "tax_total":          { "type": "real",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "grand_total":        { "type": "real",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "currency_code":      { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "terms":              { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "created_by_user_id": { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "created_at":         { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "updated_at":         { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id",       "references": { "table": "workspaces",   "field": "id" } },
+        { "field": "opportunity_id",     "references": { "table": "opportunities","field": "id" } },
+        { "field": "account_id",         "references": { "table": "accounts",     "field": "id" } },
+        { "field": "contact_id",         "references": { "table": "contacts",     "field": "id" } },
+        { "field": "created_by_user_id", "references": { "table": "users",        "field": "id" } }
+      ]
+    },
+
+    "quote_items": {
+      "description": "Individual line items within a quote, each referencing an optional product",
+      "primaryKey": "id",
+      "fields": {
+        "id":               { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "quote_id":         { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "product_id":       { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "description":      { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "quantity":         { "type": "real",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "unit_price":       { "type": "real",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "discount_percent": { "type": "real",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "tax_percent":      { "type": "real",    "filterable": true,  "selectable": true,  "sortable": false },
+        "line_total":       { "type": "real",    "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "quote_id",   "references": { "table": "quotes",   "field": "id" } },
+        { "field": "product_id", "references": { "table": "products", "field": "id" } }
+      ]
+    },
+
+    "tasks": {
+      "description": "To-do items assigned to users, linked to any CRM entity via polymorphic reference",
+      "primaryKey": "id",
+      "fields": {
+        "id":                    { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":          { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "owner_user_id":         { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "assigned_to_user_id":   { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "related_entity_type":   { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                   "allowedValues": ["lead","contact","account","opportunity","ticket","quote"] },
+        "related_entity_id":     { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "title":                 { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "description":           { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "due_at":                { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "priority":              { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                   "allowedValues": ["low","medium","high","urgent"] },
+        "status":                { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                   "allowedValues": ["open","in_progress","completed","cancelled"] },
+        "completed_at":          { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "created_at":            { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "updated_at":            { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id",        "references": { "table": "workspaces", "field": "id" } },
+        { "field": "owner_user_id",       "references": { "table": "users",      "field": "id" } },
+        { "field": "assigned_to_user_id", "references": { "table": "users",      "field": "id" } }
+      ]
+    },
+
+    "activities": {
+      "description": "Log of all interactions (calls, emails, meetings, notes) against any CRM entity",
+      "primaryKey": "id",
+      "fields": {
+        "id":                  { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":        { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "actor_user_id":       { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "related_entity_type": { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                 "allowedValues": ["lead","contact","account","opportunity","ticket","quote"] },
+        "related_entity_id":   { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "activity_type":       { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                 "allowedValues": ["call","meeting","email","demo","task","note","status_change","sms","whatsapp","system"] },
+        "subject":             { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "description":         { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "activity_at":         { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "duration_minutes":    { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "outcome":             { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "created_at":          { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id",  "references": { "table": "workspaces", "field": "id" } },
+        { "field": "actor_user_id", "references": { "table": "users",      "field": "id" } }
+      ]
+    },
+
+    "notes": {
+      "description": "Free-text notes attached to any CRM entity, optionally private to the author",
+      "primaryKey": "id",
+      "fields": {
+        "id":                  { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":        { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "created_by_user_id":  { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "related_entity_type": { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                 "allowedValues": ["lead","contact","account","opportunity","ticket","quote"] },
+        "related_entity_id":   { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "content":             { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "is_private":          { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false,
+                                 "allowedValues": [0, 1] },
+        "created_at":          { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "updated_at":          { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id",       "references": { "table": "workspaces", "field": "id" } },
+        { "field": "created_by_user_id", "references": { "table": "users",      "field": "id" } }
+      ]
+    },
+
+    "attachments": {
+      "description": "File attachments uploaded against any CRM entity or note",
+      "primaryKey": "id",
+      "fields": {
+        "id":                    { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":          { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "uploaded_by_user_id":   { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "related_entity_type":   { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                   "allowedValues": ["lead","contact","account","opportunity","ticket","quote","note","email"] },
+        "related_entity_id":     { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "file_name":             { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "file_url":              { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "mime_type":             { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "file_size_bytes":       { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "created_at":            { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id",        "references": { "table": "workspaces", "field": "id" } },
+        { "field": "uploaded_by_user_id", "references": { "table": "users",      "field": "id" } }
+      ]
+    },
+
+    "emails": {
+      "description": "Email messages sent or received, linked to a CRM entity and optionally threaded",
+      "primaryKey": "id",
+      "fields": {
+        "id":                  { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":        { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "owner_user_id":       { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "related_entity_type": { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                 "allowedValues": ["lead","contact","account","opportunity","ticket","quote"] },
+        "related_entity_id":   { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "provider_message_id": { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "thread_id":           { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "direction":           { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                 "allowedValues": ["inbound","outbound"] },
+        "subject":             { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "sent_at":             { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "status":              { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                 "allowedValues": ["draft","queued","sent","delivered","bounced","failed"] },
+        "created_at":          { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id",  "references": { "table": "workspaces", "field": "id" } },
+        { "field": "owner_user_id", "references": { "table": "users",      "field": "id" } }
+      ]
+    },
+
+    "email_participants": {
+      "description": "From/to/cc/bcc participant entries for each email, linking to a contact if known",
+      "primaryKey": "id",
+      "fields": {
+        "id":               { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "email_id":         { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "participant_type": { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                              "allowedValues": ["from","to","cc","bcc"] },
+        "contact_id":       { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "email_address":    { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "display_name":     { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false }
+      },
+      "foreignKeys": [
+        { "field": "email_id",   "references": { "table": "emails",   "field": "id" } },
+        { "field": "contact_id", "references": { "table": "contacts", "field": "id" } }
+      ]
+    },
+
+    "calls": {
+      "description": "Phone call records linked to a CRM entity and optional contact",
+      "primaryKey": "id",
+      "fields": {
+        "id":                  { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":        { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "owner_user_id":       { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "related_entity_type": { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                 "allowedValues": ["lead","contact","account","opportunity","ticket"] },
+        "related_entity_id":   { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "contact_id":          { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "started_at":          { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "ended_at":            { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "duration_seconds":    { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "direction":           { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                 "allowedValues": ["inbound","outbound"] },
+        "outcome":             { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "recording_url":       { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "notes":               { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "created_at":          { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id",  "references": { "table": "workspaces", "field": "id" } },
+        { "field": "owner_user_id", "references": { "table": "users",      "field": "id" } },
+        { "field": "contact_id",    "references": { "table": "contacts",   "field": "id" } }
+      ]
+    },
+
+    "messages": {
+      "description": "SMS, WhatsApp, chat, and other channel messages linked to a CRM entity",
+      "primaryKey": "id",
+      "fields": {
+        "id":                   { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":         { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "related_entity_type":  { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                  "allowedValues": ["lead","contact","account","opportunity","ticket"] },
+        "related_entity_id":    { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "channel":              { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                  "allowedValues": ["sms","whatsapp","chat","linkedin","other"] },
+        "direction":            { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                  "allowedValues": ["inbound","outbound"] },
+        "sender_contact_id":    { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "sender_user_id":       { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "recipient_contact_id": { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "body":                 { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "sent_at":              { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "status":               { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                  "allowedValues": ["queued","sent","delivered","read","failed"] },
+        "created_at":           { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id",         "references": { "table": "workspaces", "field": "id" } },
+        { "field": "sender_contact_id",    "references": { "table": "contacts",   "field": "id" } },
+        { "field": "sender_user_id",       "references": { "table": "users",      "field": "id" } },
+        { "field": "recipient_contact_id", "references": { "table": "contacts",   "field": "id" } }
+      ]
+    },
+
+    "tickets": {
+      "description": "Customer support tickets linked to an account and/or contact",
+      "primaryKey": "id",
+      "fields": {
+        "id":                  { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":        { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "account_id":          { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "contact_id":          { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "owner_user_id":       { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "subject":             { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "description":         { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "priority":            { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                 "allowedValues": ["low","medium","high","urgent"] },
+        "status":              { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                 "allowedValues": ["open","pending","resolved","closed"] },
+        "channel":             { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                 "allowedValues": ["email","web","chat","phone","whatsapp"] },
+        "category":            { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "resolution_summary":  { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "first_response_at":   { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "resolved_at":         { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "closed_at":           { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "created_at":          { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "updated_at":          { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id",  "references": { "table": "workspaces", "field": "id" } },
+        { "field": "account_id",    "references": { "table": "accounts",   "field": "id" } },
+        { "field": "contact_id",    "references": { "table": "contacts",   "field": "id" } },
+        { "field": "owner_user_id", "references": { "table": "users",      "field": "id" } }
+      ]
+    },
+
+    "ticket_comments": {
+      "description": "Threaded comments on a support ticket from users or contacts",
+      "primaryKey": "id",
+      "fields": {
+        "id":         { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "ticket_id":  { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "user_id":    { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "contact_id": { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "body":       { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "is_private": { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false,
+                        "allowedValues": [0, 1] },
+        "created_at": { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "ticket_id",  "references": { "table": "tickets",  "field": "id" } },
+        { "field": "user_id",    "references": { "table": "users",    "field": "id" } },
+        { "field": "contact_id", "references": { "table": "contacts", "field": "id" } }
+      ]
+    },
+
+    "tags": {
+      "description": "Colour-coded labels that can be applied to any entity type",
+      "primaryKey": "id",
+      "fields": {
+        "id":           { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id": { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "name":         { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "color":        { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "created_at":   { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id", "references": { "table": "workspaces", "field": "id" } }
+      ]
+    },
+
+    "entity_tags": {
+      "description": "Many-to-many junction assigning tags to any entity (lead, contact, account, etc.)",
+      "primaryKey": "id",
+      "fields": {
+        "id":           { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id": { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "tag_id":       { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "entity_type":  { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                          "allowedValues": ["lead","contact","account","opportunity","ticket","quote","product"] },
+        "entity_id":    { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "created_at":   { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id", "references": { "table": "workspaces", "field": "id" } },
+        { "field": "tag_id",       "references": { "table": "tags",       "field": "id" } }
+      ]
+    },
+
+    "custom_fields": {
+      "description": "Schema-level definitions for user-defined fields on any entity type",
+      "primaryKey": "id",
+      "fields": {
+        "id":            { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":  { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "entity_type":   { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                           "allowedValues": ["lead","contact","account","opportunity","ticket","quote","product"] },
+        "field_key":     { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "label":         { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "data_type":     { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                           "allowedValues": ["text","number","date","boolean","select","multi_select","json"] },
+        "is_required":   { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false,
+                           "allowedValues": [0, 1] },
+        "options_json":  { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "created_at":    { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "updated_at":    { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id", "references": { "table": "workspaces", "field": "id" } }
+      ]
+    },
+
+    "custom_field_values": {
+      "description": "Per-entity values for custom fields, typed into separate value columns",
+      "primaryKey": "id",
+      "fields": {
+        "id":              { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":    { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "custom_field_id": { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "entity_type":     { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                             "allowedValues": ["lead","contact","account","opportunity","ticket","quote","product"] },
+        "entity_id":       { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "value_text":      { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "value_number":    { "type": "real",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "value_date":      { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "value_boolean":   { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false,
+                             "allowedValues": [0, 1] },
+        "value_json":      { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "created_at":      { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "updated_at":      { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id",    "references": { "table": "workspaces",    "field": "id" } },
+        { "field": "custom_field_id", "references": { "table": "custom_fields", "field": "id" } }
+      ]
+    },
+
+    "lead_score_events": {
+      "description": "Incremental scoring events that build up a lead's total score",
+      "primaryKey": "id",
+      "fields": {
+        "id":          { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "lead_id":     { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "event_type":  { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "score_delta": { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "reason":      { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "created_at":  { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "lead_id", "references": { "table": "leads", "field": "id" } }
+      ]
+    },
+
+    "integrations": {
+      "description": "Third-party integrations configured per workspace (e.g. Slack, Stripe, HubSpot)",
+      "primaryKey": "id",
+      "fields": {
+        "id":           { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id": { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "provider":     { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "status":       { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                          "allowedValues": ["active","disabled","error"] },
+        "created_at":   { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "updated_at":   { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id", "references": { "table": "workspaces", "field": "id" } }
+      ]
+    },
+
+    "webhooks": {
+      "description": "Outbound webhook endpoints subscribed to workspace events",
+      "primaryKey": "id",
+      "fields": {
+        "id":            { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":  { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "event_name":    { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "endpoint_url":  { "type": "text",    "filterable": false, "selectable": true,  "sortable": false },
+        "is_active":     { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false,
+                           "allowedValues": [0, 1] },
+        "created_at":    { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id", "references": { "table": "workspaces", "field": "id" } }
+      ]
+    },
+
+    "workflow_rules": {
+      "description": "Automation rules that trigger actions when entity events occur",
+      "primaryKey": "id",
+      "fields": {
+        "id":             { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":   { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "name":           { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "entity_type":    { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                            "allowedValues": ["lead","contact","account","opportunity","ticket","task"] },
+        "trigger_event":  { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "is_active":      { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false,
+                            "allowedValues": [0, 1] },
+        "created_at":     { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "updated_at":     { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id", "references": { "table": "workspaces", "field": "id" } }
+      ]
+    },
+
+    "imports": {
+      "description": "Bulk import jobs for loading contacts, accounts, leads, or products from files",
+      "primaryKey": "id",
+      "fields": {
+        "id":                   { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":         { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "imported_by_user_id":  { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "entity_type":          { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                  "allowedValues": ["lead","contact","account","product"] },
+        "file_name":            { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "status":               { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                  "allowedValues": ["pending","processing","completed","failed"] },
+        "total_rows":           { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "success_rows":         { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "failed_rows":          { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "created_at":           { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  },
+        "completed_at":         { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id",        "references": { "table": "workspaces", "field": "id" } },
+        { "field": "imported_by_user_id", "references": { "table": "users",      "field": "id" } }
+      ]
+    },
+
+    "dedup_rules": {
+      "description": "Configurable deduplication rules for matching leads, contacts, and accounts",
+      "primaryKey": "id",
+      "fields": {
+        "id":           { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id": { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "entity_type":  { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                          "allowedValues": ["lead","contact","account"] },
+        "name":         { "type": "text",    "filterable": true,  "selectable": true,  "sortable": true  },
+        "is_active":    { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false,
+                          "allowedValues": [0, 1] },
+        "created_at":   { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id", "references": { "table": "workspaces", "field": "id" } }
+      ]
+    },
+
+    "merge_history": {
+      "description": "Record of entity merge operations, tracking which record was absorbed into which",
+      "primaryKey": "id",
+      "fields": {
+        "id":                 { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":       { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "entity_type":        { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                                "allowedValues": ["lead","contact","account"] },
+        "source_entity_id":   { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "target_entity_id":   { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "merged_by_user_id":  { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "merged_at":          { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id",      "references": { "table": "workspaces", "field": "id" } },
+        { "field": "merged_by_user_id", "references": { "table": "users",      "field": "id" } }
+      ]
+    },
+
+    "audit_logs": {
+      "description": "Immutable audit trail of all create/update/delete/merge actions by users",
+      "primaryKey": "id",
+      "fields": {
+        "id":             { "type": "integer", "filterable": true,  "selectable": true,  "sortable": true  },
+        "workspace_id":   { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "user_id":        { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "entity_type":    { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "entity_id":      { "type": "integer", "filterable": true,  "selectable": true,  "sortable": false },
+        "action":         { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false,
+                            "allowedValues": ["create","update","delete","merge","convert","assign","system"] },
+        "ip_address":     { "type": "text",    "filterable": true,  "selectable": true,  "sortable": false },
+        "created_at":     { "type": "text",    "format": "ISO8601", "filterable": true,  "selectable": true,  "sortable": true  }
+      },
+      "foreignKeys": [
+        { "field": "workspace_id", "references": { "table": "workspaces", "field": "id" } },
+        { "field": "user_id",      "references": { "table": "users",      "field": "id" } }
       ]
     }
   }

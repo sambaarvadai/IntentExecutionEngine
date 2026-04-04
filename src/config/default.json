@@ -1,12 +1,13 @@
 {
   "database": {
-    "filename": "database.db",
+    "filename": "crm.db",
     "path": "./"
   },
   "llm": {
     "provider": "anthropic",
     "model": "claude-opus-4-6",
     "summaryModel": "claude-haiku-4-5-20251001",
+    "tableSelectorModel": "claude-haiku-4-5-20251001",
     "maxTokens": 1000
   },
   "app": {
