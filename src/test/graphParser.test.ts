@@ -133,7 +133,7 @@ describe('resolveTransformNode', () => {
       type: 'transform',
       factory: 'filterRows',
       params: {
-        dataKey: 'customers',
+        dataKey: 'accounts',
         predicate: { op: 'equals', field: 'status', value: 'active' }
       }
     };
@@ -164,16 +164,16 @@ describe('parseIntentGraph', () => {
     const raw = {
       id: 'test-graph',
       label: 'Test Graph',
-      entryNode: 'fetch-customers',
+      entryNode: 'fetch-accounts',
       nodes: [
         {
-          id: 'fetch-customers',
+          id: 'fetch-accounts',
           type: 'query',
           label: 'Fetch Customers',
           plan: {
             needsDb: true,
-            entity: 'customers',
-            select: ['customers.*']
+            entity: 'accounts',
+            select: ['accounts.*']
           }
         }
       ],
@@ -184,10 +184,10 @@ describe('parseIntentGraph', () => {
     
     expect(graph.id).toBe('test-graph');
     expect(graph.label).toBe('Test Graph');
-    expect(graph.entryNode).toBe('fetch-customers');
+    expect(graph.entryNode).toBe('fetch-accounts');
     expect(graph.nodes).toHaveLength(1);
     expect(graph.edges).toHaveLength(0);
-    expect(graph.nodes[0].id).toBe('fetch-customers');
+    expect(graph.nodes[0].id).toBe('fetch-accounts');
     expect(graph.nodes[0].type).toBe('query');
   });
 
@@ -195,7 +195,7 @@ describe('parseIntentGraph', () => {
     const raw = {
       id: 'test-graph',
       label: 'Test Graph',
-      entryNode: 'fetch-customers',
+      entryNode: 'fetch-accounts',
       edges: []
     };
 
@@ -215,7 +215,7 @@ describe('parseIntentGraph', () => {
           label: 'Filter Active Customers',
           factory: 'filterRows',
           params: {
-            dataKey: 'customers',
+            dataKey: 'accounts',
             predicate: { op: 'equals', field: 'status', value: 'active' }
           }
         }
@@ -232,7 +232,7 @@ describe('parseIntentGraph', () => {
     const transformNode = graph.nodes[0];
     if (transformNode.transform) {
       const testData = {
-        customers: {
+        accounts: {
           rows: [
             { status: 'active', name: 'John' },
             { status: 'inactive', name: 'Jane' }
@@ -281,7 +281,7 @@ describe('parseIntentGraph', () => {
       id: 'test-graph', label: 'Test', entryNode: 'fetch',
       nodes: [{
         id: 'fetch', type: 'query', label: 'Fetch Customers',
-        plan: { needsDb: true, entity: 'customers', select: ['customers.*'] }
+        plan: { needsDb: true, entity: 'accounts', select: ['accounts.*'] }
       }],
       edges: []
     };

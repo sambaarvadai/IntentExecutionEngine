@@ -41,11 +41,11 @@ const MockedAnthropic = Anthropic as jest.MockedClass<typeof Anthropic>;
 jest.mock('../schema/metadata', () => ({
   getSchemaMetadata: () => ({
     tables: {
-      customers: {
+      accounts: {
         fields: {
-          'customers.id': { type: 'integer', filterable: true, selectable: true, sortable: true },
-          'customers.name': { type: 'text', filterable: true, selectable: true, sortable: true },
-          'customers.status': { type: 'text', filterable: true, selectable: true, sortable: true }
+          'accounts.id': { type: 'integer', filterable: true, selectable: true, sortable: true },
+          'accounts.name': { type: 'text', filterable: true, selectable: true, sortable: true },
+          'accounts.status': { type: 'text', filterable: true, selectable: true, sortable: true }
         },
         primaryKey: 'id'
       },
@@ -84,6 +84,31 @@ jest.mock('../config', () => ({
     database: {
       path: './test-data',
       filename: 'test.db'
+    }
+  }),
+  getSchemaConfig: () => ({
+    tables: {
+      accounts: {
+        description: "Companies or organisations tracked in the CRM",
+        primaryKey: "id",
+        fields: {
+          id: { type: "integer", filterable: true, selectable: true, sortable: true },
+          name: { type: "text", filterable: true, selectable: true, sortable: true },
+          city: { type: "text", filterable: true, selectable: true, sortable: true },
+          status: { type: "text", filterable: true, selectable: true, sortable: true }
+        }
+      },
+      contacts: {
+        description: "Individual people associated with accounts",
+        primaryKey: "id",
+        fields: {
+          id: { type: "integer", filterable: true, selectable: true, sortable: true },
+          first_name: { type: "text", filterable: true, selectable: true, sortable: true },
+          last_name: { type: "text", filterable: true, selectable: true, sortable: true },
+          email: { type: "text", filterable: true, selectable: true, sortable: true },
+          account_id: { type: "integer", filterable: true, selectable: true, sortable: true }
+        }
+      }
     }
   })
 }));
@@ -125,7 +150,7 @@ describe('IntentEngine', () => {
 
   describe('execute', () => {
     const validGraphJSON = {
-      tables: ['customers'],
+      tables: ['accounts'],
       filters: [],
       select: [],
       limit: 20
@@ -144,22 +169,22 @@ describe('IntentEngine', () => {
       });
 
       const request = {
-        prompt: 'Show all active customers',
+        prompt: 'Show all active accounts',
         options: { dryRun: true }
       };
 
       const result = await engine.execute(request);
 
       expect(result.graph.id).toMatch(/^graph_\d+$/); // Generated ID pattern
-      expect(result.graph.label).toBe('Query: customers');
+      expect(result.graph.label).toBe('Query: accounts');
       expect(result.result.success).toBe(true);
       expect(result.generationMs).toBeGreaterThan(0);
       expect(result.executionMs).toBe(0); // dry run
-      expect(result.prompt).toBe('Show all active customers');
+      expect(result.prompt).toBe('Show all active accounts');
     });
 
     it('self-corrects when first response is invalid JSON', async () => {
-      // Mock first call with invalid QueryIntent (missing tables), second call with valid QueryIntent
+      // Mock first call with invalid QueryIntent (missing tables), second call with valid QueryIntent, third call for summary
       mockCreate
         .mockResolvedValueOnce({
           content: [{
@@ -177,6 +202,12 @@ describe('IntentEngine', () => {
             type: 'text',
             text: JSON.stringify(validGraphJSON)
           }]
+        })
+        .mockResolvedValueOnce({
+          content: [{
+            type: 'text',
+            text: 'Shows all active accounts from the database'
+          }]
         });
 
       const request = {
@@ -187,11 +218,11 @@ describe('IntentEngine', () => {
       const result = await engine.execute(request);
 
       expect(result.graph.id).toMatch(/^graph_\d+$/);
-      expect(result.graph.label).toBe('Query: customers');
+      expect(result.graph.label).toBe('Query: accounts');
       expect(result.result.success).toBe(true);
       
-      // Verify correction message was sent
-      expect(mockCreate).toHaveBeenCalledTimes(2);
+      // Verify correction message was sent (2 for correction + 1 for summary = 3 total)
+      expect(mockCreate).toHaveBeenCalledTimes(3);
     });
 
     it('throws IntentParseError after 3 failed correction attempts', async () => {

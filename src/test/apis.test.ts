@@ -3,32 +3,31 @@ import { apiRegistry } from '../api/registry';
 import { createSearchService } from '../search';
 import { APIDefinition } from '../context/types';
 
+// Mock the search service factory with proper jest mocks
+jest.mock('../search/factory', () => ({
+  createSearchService: jest.fn(() => ({
+    init: jest.fn().mockResolvedValue(undefined),
+    indexAPI: jest.fn().mockResolvedValue(undefined),
+    removeFromIndex: jest.fn().mockResolvedValue(undefined)
+  }))
+}));
+
+const mockCreateSearchService = createSearchService as jest.MockedFunction<typeof createSearchService>;
+const mockSearchService = mockCreateSearchService('test-key', 'http://localhost:8000');
+
 // Mock environment variables
 const originalEnv = process.env;
 beforeAll(() => {
   process.env = {
     ...originalEnv,
     VOYAGE_API_KEY: 'test-key',
-    CHROMA_URL: 'test-url'
+    CHROMA_URL: 'http://localhost:8000'
   };
 });
 
 afterAll(() => {
   process.env = originalEnv;
 });
-
-// Mock the search service
-jest.mock('../search', () => ({
-  createSearchService: jest.fn(() => ({
-    init: jest.fn().mockResolvedValue(undefined),
-    indexAPI: jest.fn().mockResolvedValue(undefined) as jest.Mock,
-    removeFromIndex: jest.fn().mockResolvedValue(undefined) as jest.Mock
-  }))
-}));
-
-const mockCreateSearchService = createSearchService as jest.MockedFunction<typeof createSearchService>;
-// Get the first call (module initialization) which is what the module actually uses
-const mockSearchService = mockCreateSearchService.mock.results[0].value as any;
 
 // Mock the registry
 jest.mock('../api/registry', () => ({
@@ -217,7 +216,7 @@ describe('API Routes', () => {
       mockReq.body = { status: 'ACTIVE' };
       
       mockApiRegistry.updateStatus.mockResolvedValue(mockApi);
-      mockSearchService.indexAPI.mockRejectedValue(new Error('ChromaDB connection failed'));
+      (mockSearchService.indexAPI as jest.MockedFunction<(api: APIDefinition) => Promise<void>>).mockRejectedValue(new Error('ChromaDB connection failed'));
 
       // Mock console.error to avoid test output noise
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation();

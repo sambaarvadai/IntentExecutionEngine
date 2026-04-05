@@ -9,20 +9,20 @@ describe('Full pipeline integration', () => {
     const mockAdapter: LLMAdapter = {
       generatePlan: jest.fn().mockResolvedValue({
         needsDb: true,
-        entity: 'customers',
-        select: ['customers.*']
+        entity: 'accounts',
+        select: ['accounts.*']
       }),
       correctPlan: jest.fn().mockResolvedValue({
         needsDb: true,
-        entity: 'customers',
-        select: ['customers.*']
+        entity: 'accounts',
+        select: ['accounts.*']
       })
     }
-    const result = await buildQueryPipeline('Show all customers', mockAdapter)
+    const result = await buildQueryPipeline('Show all accounts', mockAdapter)
 
     expect(result.finalValidation.valid).toBe(true)
     expect(result.compiled.sql).toContain('SELECT')
-    expect(result.compiled.sql).toContain('FROM "customers"')
+    expect(result.compiled.sql).toContain('FROM "accounts"')
   })
 
   it('handles conversational intent without hitting DB', async () => {
@@ -49,16 +49,16 @@ describe('Full pipeline integration', () => {
         entity: 'nonexistent',  // bad
       }).mockResolvedValueOnce({
         needsDb: true,
-        entity: 'customers',    // corrected
-        select: ['customers.*']
+        entity: 'accounts',    // corrected
+        select: ['accounts.*']
       }),
       correctPlan: jest.fn().mockResolvedValue({
         needsDb: true,
-        entity: 'customers',
-        select: ['customers.*']
+        entity: 'accounts',
+        select: ['accounts.*']
       })
     }
-    const result = await buildQueryPipeline('show customers', mockAdapter)
+    const result = await buildQueryPipeline('show accounts', mockAdapter)
     expect(result.attempts).toBeGreaterThan(1)
     expect(result.finalValidation.valid).toBe(true)
   })

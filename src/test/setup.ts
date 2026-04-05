@@ -33,14 +33,14 @@ jest.mock('../plans/anthropicAdapter', () => ({
     generatePlan: jest.fn().mockResolvedValue({
       id: 'test-plan',
       needsDb: true,
-      entity: 'customers',
-      select: ['customers.*']
+      entity: 'accounts',
+      select: ['accounts.*']
     }),
     correctPlan: jest.fn().mockResolvedValue({
       id: 'test-plan-corrected',
       needsDb: true,
-      entity: 'customers',
-      select: ['customers.*', 'orders.*']
+      entity: 'accounts',
+      select: ['accounts.*', 'contacts.*']
     })
   }))
 }));
@@ -63,32 +63,36 @@ jest.mock('../config', () => ({
 jest.mock('../schema/metadata', () => ({
   getSchemaMetadata: jest.fn().mockReturnValue({
     tables: {
-      customers: {
+      accounts: {
         fields: {
-          'customers.id': { type: 'INTEGER', filterable: true, selectable: true, sortable: true },
-          'customers.name': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
-          'customers.city': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
-          'customers.score': { type: 'INTEGER', filterable: true, selectable: true, sortable: true },
-          'customers.*': { type: 'text', filterable: false, selectable: true, sortable: false }
+          'accounts.id': { type: 'INTEGER', filterable: true, selectable: true, sortable: true },
+          'accounts.name': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
+          'accounts.city': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
+          'accounts.status': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
+          'accounts.*': { type: 'text', filterable: false, selectable: true, sortable: false }
         },
         joins: {
-          'orders': 'customers.id = orders.customer_id'
+          'contacts': 'accounts.id = contacts.account_id'
         }
       },
-      orders: {
+      contacts: {
         fields: {
-          'orders.id': { type: 'INTEGER', filterable: true, selectable: true, sortable: true },
-          'orders.customer_id': { type: 'INTEGER', filterable: true, selectable: true, sortable: true },
-          'orders.item': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
-          'orders.amount': { type: 'REAL', filterable: true, selectable: true, sortable: true },
-          'orders.created_at': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
-          'orders.*': { type: 'text', filterable: false, selectable: true, sortable: false }
-        },
-        joins: undefined
+          'contacts.id': { type: 'INTEGER', filterable: true, selectable: true, sortable: true },
+          'contacts.first_name': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
+          'contacts.last_name': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
+          'contacts.email': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
+          'contacts.account_id': { type: 'INTEGER', filterable: true, selectable: true, sortable: true }
+        }
+      },
+      leads: {
+        fields: {
+          'leads.id': { type: 'INTEGER', filterable: true, selectable: true, sortable: true },
+          'leads.first_name': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
+          'leads.last_name': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
+          'leads.email': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
+          'leads.status': { type: 'TEXT', filterable: true, selectable: true, sortable: true }
+        }
       }
-    },
-    allowedAggregations: ['count', 'sum', 'avg', 'min', 'max'],
-    allowedOperators: ['=', '!=', '>', '<', '>=', '<=', 'LIKE', 'NOT LIKE', 'IN', 'NOT IN', 'IS NULL', 'IS NOT NULL', 'BETWEEN'],
-    maxLimit: 100
+    }
   })
 }));

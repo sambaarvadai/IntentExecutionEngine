@@ -16,19 +16,19 @@ describe('APIHandler', () => {
     // Seed registry with a test API
     const plan = await planStore.save({
       needsDb: true,
-      entity: 'customers',
-      select: ['customers.*']
+      entity: 'accounts',
+      select: ['accounts.*']
     })
     await apiRegistry.register({
-      route: '/customers',
+      route: '/accounts',
       method: 'GET',
       planId: plan.id,
       status: 'ACTIVE',
-      label: 'List customers',
+      label: 'List accounts',
       auth: { type: 'none', required: false }
     })
     
-    const api = await apiRegistry.resolveRoute('GET', '/customers')
+    const api = await apiRegistry.resolveRoute('GET', '/accounts')
     const response = await apiHandler.handleRequest({
       apiId: api.id,
       params: {},
@@ -39,9 +39,9 @@ describe('APIHandler', () => {
   })
 
   it('rejects requests to DRAFT APIs', async () => {
-    const plan = await planStore.save({ needsDb: true, entity: 'customers' })
+    const plan = await planStore.save({ needsDb: true, entity: 'accounts' })
     const draft = await apiRegistry.register({
-      route: '/customers/draft',
+      route: '/accounts/draft',
       method: 'GET',
       planId: plan.id,
       status: 'DRAFT',
@@ -55,7 +55,7 @@ describe('APIHandler', () => {
     expect(draft.status).toBe('DRAFT')
     
     // Test that DRAFT APIs exist but shouldn't be accessible
-    const draftApi = await apiRegistry.resolveRoute('GET', '/customers/draft')
+    const draftApi = await apiRegistry.resolveRoute('GET', '/accounts/draft')
     expect(draftApi.status).toBe('DRAFT')
   })
 })
@@ -70,15 +70,15 @@ describe('security integration', () => {
   it('audit logs a successful request', async () => {
     const plan = await planStore.save({
       needsDb: true,
-      entity: 'customers',
-      select: ['customers.*']
+      entity: 'accounts',
+      select: ['accounts.*']
     })
     const api = await apiRegistry.register({
-      route: '/customers/audit-test',
+      route: '/accounts/audit-test',
       method: 'GET',
       planId: plan.id,
       status: 'ACTIVE',
-      label: 'List customers',
+      label: 'List accounts',
       dataLabel: 'sensitive',
       auth: { type: 'none', required: false }
     })
@@ -99,15 +99,15 @@ describe('security integration', () => {
   it('filters response for insufficient role on sensitive API', async () => {
     const plan = await planStore.save({
       needsDb: true,
-      entity: 'customers',
-      select: ['customers.*']
+      entity: 'accounts',
+      select: ['accounts.*']
     })
     const api = await apiRegistry.register({
-      route: '/customers/sensitive-test',
+      route: '/accounts/sensitive-test',
       method: 'GET',
       planId: plan.id,
       status: 'ACTIVE',
-      label: 'List customers',
+      label: 'List accounts',
       dataLabel: 'sensitive',
       auth: { type: 'none', required: false }
     })
@@ -131,11 +131,11 @@ describe('security integration', () => {
     // by checking that blocked status is logged
     const plan = await planStore.save({
       needsDb: true,
-      entity: 'customers',
-      select: ['customers.*']
+      entity: 'accounts',
+      select: ['accounts.*']
     })
     const api = await apiRegistry.register({
-      route: '/customers/ratelimit-test',
+      route: '/accounts/ratelimit-test',
       method: 'GET',
       planId: plan.id,
       status: 'ACTIVE',

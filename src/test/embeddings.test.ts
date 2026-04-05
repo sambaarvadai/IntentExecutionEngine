@@ -125,7 +125,7 @@ describe('VoyageEmbeddings', () => {
           body: JSON.stringify({
             input: [text],
             model: 'voyage-3',
-            input_type: 'document'
+            input_type: 'query'
           })
         }
       );

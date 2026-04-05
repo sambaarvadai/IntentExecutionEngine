@@ -3,6 +3,36 @@
 import { mergeByKey, filterRows, pickFields, mapRows, sortRows, aggregateRows } from '../graph/nodes/transform'
 import { GraphRuntime, ExecutionNode, ExecutionNodeType } from '../graph'
 
+// Mock database for transform nodes tests
+jest.mock('../db/sqlite', () => ({
+  getDatabase: jest.fn(() => Promise.resolve({
+    run: jest.fn(),
+    get: jest.fn(),
+    all: jest.fn((sql: string, params: any[]) => {
+      // Return mock data for accounts queries
+      if (sql.includes('accounts')) {
+        return [
+          { id: 1, name: 'Ravi', city: 'Chennai', score: 85 },
+          { id: 2, name: 'Priya', city: 'Mumbai', score: 92 },
+          { id: 3, name: 'Karthik', city: 'Chennai', score: 78 },
+          { id: 4, name: 'Anu', city: 'Bangalore', score: 95 }
+        ]
+      }
+      // Return mock data for opportunities queries
+      if (sql.includes('opportunities')) {
+        return [
+          { id: 101, account_id: 1, amount: 500, stage: 'proposal' },
+          { id: 102, account_id: 1, amount: 300, stage: 'negotiation' },
+          { id: 103, account_id: 2, amount: 1200, stage: 'proposal' },
+          { id: 104, account_id: 3, amount: 450, stage: 'closed_won' }
+        ]
+      }
+      return []
+    }),
+    close: jest.fn()
+  }))
+}));
+
 const runtime = new GraphRuntime()
 
 describe('Transform Nodes', () => {
@@ -14,38 +44,38 @@ describe('Transform Nodes', () => {
       entryNode: 'merge',
       nodes: [
         {
-          id: 'customers',
+          id: 'accounts',
           type: 'query' as ExecutionNodeType,
-          label: 'Get customers',
+          label: 'Get accounts',
           plan: {
             needsDb: true,
-            entity: 'customers',
-            select: ['customers.*']
+            entity: 'accounts',
+            select: ['accounts.*']
           }
         },
         {
-          id: 'orders',
+          id: 'opportunities',
           type: 'query' as ExecutionNodeType,
-          label: 'Get orders',
+          label: 'Get opportunities',
           plan: {
             needsDb: true,
-            entity: 'orders',
-            select: ['orders.*']
+            entity: 'opportunities',
+            select: ['opportunities.*']
           }
         },
         mergeByKey({
           id: 'merge',
-          label: 'Merge customers with orders',
-          leftKey: 'customers',
-          rightKey: 'orders',
+          label: 'Merge accounts with opportunities',
+          leftKey: 'accounts',
+          rightKey: 'opportunities',
           on: 'id',
-          foreignKey: 'customer_id',
-          outputField: 'orders'
+          foreignKey: 'account_id',
+          outputField: 'opportunities'
         })
       ],
       edges: [
-        { from: 'customers', to: 'merge', dataKey: 'customers' },
-        { from: 'orders', to: 'merge', dataKey: 'orders' }
+        { from: 'accounts', to: 'merge', dataKey: 'accounts' },
+        { from: 'opportunities', to: 'merge', dataKey: 'opportunities' }
       ]
     }
 
@@ -58,27 +88,27 @@ describe('Transform Nodes', () => {
     const graph = {
       id: 'filter-test',
       label: 'Filter Test',
-      entryNode: 'customers',
+      entryNode: 'accounts',
       nodes: [
         {
-          id: 'customers',
+          id: 'accounts',
           type: 'query' as ExecutionNodeType,
-          label: 'Get customers',
+          label: 'Get accounts',
           plan: {
             needsDb: true,
-            entity: 'customers',
-            select: ['customers.*']
+            entity: 'accounts',
+            select: ['accounts.*']
           }
         },
         filterRows({
           id: 'filter-chennai',
-          label: 'Filter Chennai customers',
-          dataKey: 'customers',
+          label: 'Filter Chennai accounts',
+          dataKey: 'accounts',
           predicate: (row: any) => row.city === 'Chennai'
         })
       ],
       edges: [
-        { from: 'customers', to: 'filter-chennai', dataKey: 'customers' }
+        { from: 'accounts', to: 'filter-chennai', dataKey: 'accounts' }
       ]
     }
 
@@ -91,27 +121,27 @@ describe('Transform Nodes', () => {
     const graph = {
       id: 'pick-test',
       label: 'Pick Fields Test',
-      entryNode: 'customers',
+      entryNode: 'accounts',
       nodes: [
         {
-          id: 'customers',
+          id: 'accounts',
           type: 'query' as ExecutionNodeType,
-          label: 'Get customers',
+          label: 'Get accounts',
           plan: {
             needsDb: true,
-            entity: 'customers',
-            select: ['customers.*']
+            entity: 'accounts',
+            select: ['accounts.*']
           }
         },
         pickFields({
           id: 'pick-name-city',
           label: 'Pick name and city',
-          dataKey: 'customers',
+          dataKey: 'accounts',
           fields: ['name', 'city']
         })
       ],
       edges: [
-        { from: 'customers', to: 'pick-name-city', dataKey: 'customers' }
+        { from: 'accounts', to: 'pick-name-city', dataKey: 'accounts' }
       ]
     }
 
@@ -124,28 +154,28 @@ describe('Transform Nodes', () => {
     const graph = {
       id: 'sort-test',
       label: 'Sort Test',
-      entryNode: 'customers',
+      entryNode: 'accounts',
       nodes: [
         {
-          id: 'customers',
+          id: 'accounts',
           type: 'query' as ExecutionNodeType,
-          label: 'Get customers',
+          label: 'Get accounts',
           plan: {
             needsDb: true,
-            entity: 'customers',
-            select: ['customers.*']
+            entity: 'accounts',
+            select: ['accounts.*']
           }
         },
         sortRows({
           id: 'sort-by-name',
           label: 'Sort by name',
-          dataKey: 'customers',
+          dataKey: 'accounts',
           field: 'name',
           direction: 'asc'
         })
       ],
       edges: [
-        { from: 'customers', to: 'sort-by-name', dataKey: 'customers' }
+        { from: 'accounts', to: 'sort-by-name', dataKey: 'accounts' }
       ]
     }
 
@@ -158,31 +188,31 @@ describe('Transform Nodes', () => {
     const graph = {
       id: 'aggregate-test',
       label: 'Aggregate Test',
-      entryNode: 'orders',
+      entryNode: 'opportunities',
       nodes: [
         {
-          id: 'orders',
+          id: 'opportunities',
           type: 'query' as ExecutionNodeType,
-          label: 'Get orders',
+          label: 'Get opportunities',
           plan: {
             needsDb: true,
-            entity: 'orders',
-            select: ['orders.*']
+            entity: 'opportunities',
+            select: ['opportunities.*']
           }
         },
         aggregateRows({
-          id: 'aggregate-by-customer',
-          label: 'Aggregate orders by customer',
-          dataKey: 'orders',
-          groupBy: ['customer_id'],
+          id: 'aggregate-by-account',
+          label: 'Aggregate opportunities by account',
+          dataKey: 'opportunities',
+          groupBy: ['account_id'],
           aggregations: {
             amount: { count: true, sum: true, avg: true },
-            customer_id: { count: true }
+            account_id: { count: true }
           }
         })
       ],
       edges: [
-        { from: 'orders', to: 'aggregate-by-customer', dataKey: 'orders' }
+        { from: 'opportunities', to: 'aggregate-by-account', dataKey: 'opportunities' }
       ]
     }
 

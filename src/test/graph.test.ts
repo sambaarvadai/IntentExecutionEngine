@@ -2,6 +2,33 @@
 
 import { GraphRuntime, ExecutionGraph } from '../graph'
 
+// Mock database for graph tests
+jest.mock('../db/sqlite', () => ({
+  getDatabase: jest.fn(() => Promise.resolve({
+    run: jest.fn(),
+    get: jest.fn(),
+    all: jest.fn((sql: string, params: any[]) => {
+      // Return 10 mock rows for accounts queries
+      if (sql.includes('accounts')) {
+        return [
+          { id: 1, name: 'Ravi', city: 'Chennai', score: 85 },
+          { id: 2, name: 'Priya', city: 'Mumbai', score: 92 },
+          { id: 3, name: 'Karthik', city: 'Chennai', score: 78 },
+          { id: 4, name: 'Anu', city: 'Bangalore', score: 95 },
+          { id: 5, name: 'Vijay', city: 'Delhi', score: 88 },
+          { id: 6, name: 'Deepak', city: 'Pune', score: 82 },
+          { id: 7, name: 'Sneha', city: 'Hyderabad', score: 90 },
+          { id: 8, name: 'Amit', city: 'Kolkata', score: 87 },
+          { id: 9, name: 'Neha', city: 'Chennai', score: 93 },
+          { id: 10, name: 'Rohit', city: 'Mumbai', score: 79 }
+        ]
+      }
+      return []
+    }),
+    close: jest.fn()
+  }))
+}));
+
 const runtime = new GraphRuntime()
 
 describe('GraphRuntime', () => {
@@ -10,16 +37,16 @@ describe('GraphRuntime', () => {
     const graph: ExecutionGraph = {
       id: 'test-graph',
       label: 'Test',
-      entryNode: 'fetch-customers',
+      entryNode: 'fetch-accounts',
       nodes: [
         {
-          id: 'fetch-customers',
+          id: 'fetch-accounts',
           type: 'query',
-          label: 'Fetch customers',
+          label: 'Fetch accounts',
           plan: {
             needsDb: true,
-            entity: 'customers',
-            select: ['customers.*']
+            entity: 'accounts',
+            select: ['accounts.*']
           }
         }
       ],
@@ -36,9 +63,9 @@ describe('GraphRuntime', () => {
       entryNode: 'node-a',
       nodes: [
         { id: 'node-a', type: 'query', label: 'A',
-          plan: { needsDb: true, entity: 'customers' } },
+          plan: { needsDb: true, entity: 'accounts' } },
         { id: 'node-a', type: 'query', label: 'A-dup',
-          plan: { needsDb: true, entity: 'customers' } },
+          plan: { needsDb: true, entity: 'accounts' } },
       ],
       edges: []
     }
@@ -53,7 +80,7 @@ describe('GraphRuntime', () => {
       entryNode: 'does-not-exist',
       nodes: [
         { id: 'node-a', type: 'query', label: 'A',
-          plan: { needsDb: true, entity: 'customers' } }
+          plan: { needsDb: true, entity: 'accounts' } }
       ],
       edges: []
     }
@@ -65,16 +92,16 @@ describe('GraphRuntime', () => {
     const graph: ExecutionGraph = {
       id: 'single-query',
       label: 'Single query',
-      entryNode: 'fetch-customers',
+      entryNode: 'fetch-accounts',
       nodes: [
         {
-          id: 'fetch-customers',
+          id: 'fetch-accounts',
           type: 'query',
-          label: 'Fetch customers',
+          label: 'Fetch accounts',
           plan: {
             needsDb: true,
-            entity: 'customers',
-            select: ['customers.*']
+            entity: 'accounts',
+            select: ['accounts.*']
           }
         }
       ],
@@ -90,16 +117,16 @@ describe('GraphRuntime', () => {
     const graph: ExecutionGraph = {
       id: 'two-node',
       label: 'Fetch and transform',
-      entryNode: 'fetch-customers',
+      entryNode: 'fetch-accounts',
       nodes: [
         {
-          id: 'fetch-customers',
+          id: 'fetch-accounts',
           type: 'query',
-          label: 'Fetch customers',
+          label: 'Fetch accounts',
           plan: {
             needsDb: true,
-            entity: 'customers',
-            select: ['customers.*']
+            entity: 'accounts',
+            select: ['accounts.*']
           }
         },
         {
@@ -107,13 +134,13 @@ describe('GraphRuntime', () => {
           type: 'transform',
           label: 'Count results',
           transform: (input) => {
-            const count = input.customers?.rows?.length ?? 0;
+            const count = input.accounts?.rows?.length ?? 0;
             return { count };
           }
         }
       ],
       edges: [
-        { from: 'fetch-customers', to: 'count-results', dataKey: 'customers' }
+        { from: 'fetch-accounts', to: 'count-results', dataKey: 'accounts' }
       ]
     }
     const result = await runtime.execute(graph)

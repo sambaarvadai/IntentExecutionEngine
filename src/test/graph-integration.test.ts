@@ -37,7 +37,7 @@ jest.mock('../db/sqlite', () => ({
     get: jest.fn(),
     all: jest.fn((sql: string, params: any[]) => {
       // Return empty results for TEST 4
-      if (sql.includes('customers') && params.length === 0) {
+      if (sql.includes('accounts') && params.length === 0) {
         return []
       }
       // Return mock data for other tests
@@ -56,31 +56,31 @@ jest.mock('../db/sqlite', () => ({
 describe('Graph Integration Tests', () => {
   const runtime = new GraphRuntime()
 
-  describe('TEST 1: "fetch and log customers"', () => {
+  describe('TEST 1: "fetch and log accounts"', () => {
     it('executes fetch and log nodes in sequence', async () => {
       const graph: ExecutionGraph = {
         id: 'fetch-and-log',
-        label: 'Fetch customers and log results',
-        entryNode: 'fetch-customers',
+        label: 'Fetch accounts and log results',
+        entryNode: 'fetch-accounts',
         nodes: [
           buildQueryNode({
-            id: 'fetch-customers',
-            label: 'Fetch customers',
+            id: 'fetch-accounts',
+            label: 'Fetch accounts',
             plan: {
               needsDb: true,
-              entity: 'customers',
-              select: ['customers.*']
+              entity: 'accounts',
+              select: ['accounts.*']
             }
           }),
           buildLogNode({
             id: 'log-results',
             label: 'Log results',
-            dataKey: 'customers',
+            dataKey: 'accounts',
             prefix: '[FETCH]'
           })
         ],
         edges: [
-          { from: 'fetch-customers', to: 'log-results', dataKey: 'customers' }
+          { from: 'fetch-accounts', to: 'log-results', dataKey: 'accounts' }
         ]
       }
 
@@ -93,38 +93,38 @@ describe('Graph Integration Tests', () => {
     })
   })
 
-  describe('TEST 2: "fetch customers, filter Chennai, pick name and city"', () => {
+  describe('TEST 2: "fetch accounts, filter Chennai, pick name and city"', () => {
     it('chains multiple transform nodes', async () => {
       const graph: ExecutionGraph = {
         id: 'fetch-filter-pick',
         label: 'Fetch, filter, and pick fields',
-        entryNode: 'fetch-customers',
+        entryNode: 'fetch-accounts',
         nodes: [
           buildQueryNode({
-            id: 'fetch-customers',
-            label: 'Fetch customers',
+            id: 'fetch-accounts',
+            label: 'Fetch accounts',
             plan: {
               needsDb: true,
-              entity: 'customers',
-              select: ['customers.*']
+              entity: 'accounts',
+              select: ['accounts.*']
             }
           }),
           filterRows({
             id: 'filter-chennai',
-            label: 'Filter Chennai customers',
-            dataKey: 'customers',
+            label: 'Filter Chennai accounts',
+            dataKey: 'accounts',
             predicate: (row: any) => row.city === 'Chennai'
           }),
           pickFields({
             id: 'pick-name-city',
             label: 'Pick name and city fields',
-            dataKey: 'customers',
+            dataKey: 'accounts',
             fields: ['name', 'city']
           })
         ],
         edges: [
-          { from: 'fetch-customers', to: 'filter-chennai', dataKey: 'customers' },
-          { from: 'filter-chennai', to: 'pick-name-city', dataKey: 'customers' }
+          { from: 'fetch-accounts', to: 'filter-chennai', dataKey: 'accounts' },
+          { from: 'filter-chennai', to: 'pick-name-city', dataKey: 'accounts' }
         ]
       }
 
@@ -146,50 +146,50 @@ describe('Graph Integration Tests', () => {
     })
   })
 
-  describe('TEST 3: "fetch customers and orders, merge, and log"', () => {
+  describe('TEST 3: "fetch accounts and opportunities, merge, and log"', () => {
     it('joins datasets and passes merged data to next node', async () => {
       const graph: ExecutionGraph = {
         id: 'fetch-merge-log',
-        label: 'Fetch customers, merge with orders, log results',
-        entryNode: 'fetch-customers',
+        label: 'Fetch accounts, merge with opportunities, log results',
+        entryNode: 'fetch-accounts',
         nodes: [
           buildQueryNode({
-            id: 'fetch-customers',
-            label: 'Fetch customers',
+            id: 'fetch-accounts',
+            label: 'Fetch accounts',
             plan: {
               needsDb: true,
-              entity: 'customers',
-              select: ['customers.*']
+              entity: 'accounts',
+              select: ['accounts.*']
             }
           }),
           buildQueryNode({
-            id: 'fetch-orders',
-            label: 'Fetch orders',
+            id: 'fetch-opportunities',
+            label: 'Fetch opportunities',
             plan: {
               needsDb: true,
-              entity: 'orders',
-              select: ['orders.*']
+              entity: 'opportunities',
+              select: ['opportunities.*']
             }
           }),
           mergeByKey({
-            id: 'merge-customers-orders',
-            label: 'Merge customers with orders',
-            leftKey: 'customers',
-            rightKey: 'orders',
+            id: 'merge-accounts-opportunities',
+            label: 'Merge accounts with opportunities',
+            leftKey: 'accounts',
+            rightKey: 'opportunities',
             on: 'id',
-            foreignKey: 'customer_id',
-            outputField: 'orders'
+            foreignKey: 'account_id',
+            outputField: 'opportunities'
           }),
           buildLogNode({
             id: 'log-merged',
             label: 'Log merged results',
-            dataKey: 'customers'
+            dataKey: 'accounts'
           })
         ],
         edges: [
-          { from: 'fetch-customers', to: 'merge-customers-orders', dataKey: 'customers' },
-          { from: 'fetch-orders', to: 'merge-customers-orders', dataKey: 'orders' },
-          { from: 'merge-customers-orders', to: 'log-merged', dataKey: 'customers' }
+          { from: 'fetch-accounts', to: 'merge-accounts-opportunities', dataKey: 'accounts' },
+          { from: 'fetch-opportunities', to: 'merge-accounts-opportunities', dataKey: 'opportunities' },
+          { from: 'merge-accounts-opportunities', to: 'log-merged', dataKey: 'accounts' }
         ]
       }
 
@@ -198,14 +198,14 @@ describe('Graph Integration Tests', () => {
       expect(result.success).toBe(true)
       expect(result.finalOutput?.rows).toEqual(expect.any(Array))
       
-      // Verify merge worked - customers should have orders array
+      // Verify merge worked - accounts should have opportunities array
       if (result.finalOutput?.rows) {
         for (const row of result.finalOutput.rows) {
-          expect(row).toHaveProperty('orders')
-          expect(Array.isArray(row.orders)).toBe(true)
-          if (row.orders && row.orders.length > 0) {
-            expect(row.orders[0]).toHaveProperty('id')
-            expect(row.orders[0]).toHaveProperty('amount')
+          expect(row).toHaveProperty('opportunities')
+          expect(Array.isArray(row.opportunities)).toBe(true)
+          if (row.opportunities && row.opportunities.length > 0) {
+            expect(row.opportunities[0]).toHaveProperty('id')
+            expect(row.opportunities[0]).toHaveProperty('amount')
           }
         }
       }
@@ -219,12 +219,12 @@ describe('Graph Integration Tests', () => {
       const conditionNode = ifEmpty({
         id: 'check-empty',
         label: 'Check if empty',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         trueBranch: 'log-results',
         falseBranch: 'notify-empty'
       })
 
-      const input = { customers: { rows: [], fields: [] } }
+      const input = { accounts: { rows: [], fields: [] } }
       const result = conditionNode.condition!(input)
       
       expect(result).toBe(true)
@@ -236,15 +236,15 @@ describe('Graph Integration Tests', () => {
       const graph: ExecutionGraph = {
         id: 'webhook-test',
         label: 'Test webhook notification',
-        entryNode: 'fetch-customers',
+        entryNode: 'fetch-accounts',
         nodes: [
           buildQueryNode({
-            id: 'fetch-customers',
-            label: 'Fetch customers',
+            id: 'fetch-accounts',
+            label: 'Fetch accounts',
             plan: {
               needsDb: true,
-              entity: 'customers',
-              select: ['customers.*']
+              entity: 'accounts',
+              select: ['accounts.*']
             }
           }),
           buildWebhookNode({
@@ -252,11 +252,11 @@ describe('Graph Integration Tests', () => {
             label: 'Send customer data to webhook',
             url: 'https://api.example.com/webhook',
             method: 'POST',
-            dataKey: 'customers'
+            dataKey: 'accounts'
           })
         ],
         edges: [
-          { from: 'fetch-customers', to: 'send-webhook', dataKey: 'customers' }
+          { from: 'fetch-accounts', to: 'send-webhook', dataKey: 'accounts' }
         ]
       }
 

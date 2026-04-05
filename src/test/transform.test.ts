@@ -10,7 +10,7 @@ import {
   limitRows
 } from '../graph/nodes/transform'
 
-const customers = {
+const accounts = {
   rows: [
     { id: 1, name: 'Ravi',    city: 'Chennai',   score: 85 },
     { id: 2, name: 'Priya',   city: 'Mumbai',    score: 92 },
@@ -33,18 +33,18 @@ const orders = {
 describe('Transform Node Factories', () => {
 
   describe('mergeByKey', () => {
-    it('joins customers with orders correctly', () => {
+    it('joins accounts with orders correctly', () => {
       const node = mergeByKey({
         id: 'merge',
-        label: 'Merge customers with orders',
-        leftKey: 'customers',
+        label: 'Merge accounts with orders',
+        leftKey: 'accounts',
         rightKey: 'orders',
         on: 'id',
         foreignKey: 'customer_id',
         outputField: 'orders'
       })
 
-      const result = node.transform!!({ customers, orders })
+      const result = node.transform!!({ accounts, orders })
 
       expect(result.rows).toHaveLength(4)
       
@@ -74,8 +74,8 @@ describe('Transform Node Factories', () => {
     it('handles missing input key', () => {
       const node = mergeByKey({
         id: 'merge',
-        label: 'Merge customers with orders',
-        leftKey: 'customers',
+        label: 'Merge accounts with orders',
+        leftKey: 'accounts',
         rightKey: 'orders',
         on: 'id',
         foreignKey: 'customer_id',
@@ -94,26 +94,26 @@ describe('Transform Node Factories', () => {
       const node = filterRows({
         id: 'filter',
         label: 'Filter Chennai',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         predicate: row => row.city === 'Chennai'
       })
 
-      const result = node.transform!({ customers })
+      const result = node.transform!({ accounts })
 
       expect(result.rows).toHaveLength(2)
       expect(result.rows.map((row: any) => row.name)).toEqual(['Ravi', 'Karthik'])
-      expect(result.fields).toEqual(customers.fields)
+      expect(result.fields).toEqual(accounts.fields)
     })
 
     it('filters by score correctly', () => {
       const node = filterRows({
         id: 'filter',
         label: 'Filter high scores',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         predicate: row => row.score > 90
       })
 
-      const result = node.transform!({ customers })
+      const result = node.transform!({ accounts })
 
       expect(result.rows).toHaveLength(2)
       expect(result.rows.map((row: any) => row.name)).toEqual(['Priya', 'Anu'])
@@ -123,21 +123,21 @@ describe('Transform Node Factories', () => {
       const node = filterRows({
         id: 'filter',
         label: 'Filter non-existent',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         predicate: row => row.city === 'Delhi'
       })
 
-      const result = node.transform!({ customers })
+      const result = node.transform!({ accounts })
 
       expect(result.rows).toEqual([])
-      expect(result.fields).toEqual(customers.fields)
+      expect(result.fields).toEqual(accounts.fields)
     })
 
     it('handles missing dataKey', () => {
       const node = filterRows({
         id: 'filter',
         label: 'Filter',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         predicate: row => row.city === 'Chennai'
       })
 
@@ -152,11 +152,11 @@ describe('Transform Node Factories', () => {
       const node = pickFields({
         id: 'pick',
         label: 'Pick id and name',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         fields: ['id', 'name']
       })
 
-      const result = node.transform!({ customers })
+      const result = node.transform!({ accounts })
 
       expect(result.rows).toHaveLength(4)
       result.rows.forEach((row: any) => {
@@ -170,25 +170,25 @@ describe('Transform Node Factories', () => {
     })
 
     it('does not mutate original rows', () => {
-      const originalCustomers = JSON.parse(JSON.stringify(customers))
+      const originalCustomers = JSON.parse(JSON.stringify(accounts))
       
       const node = pickFields({
         id: 'pick',
         label: 'Pick id and name',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         fields: ['id', 'name']
       })
 
-      node.transform!({ customers })
+      node.transform!({ accounts })
 
-      expect(customers).toEqual(originalCustomers)
+      expect(accounts).toEqual(originalCustomers)
     })
 
     it('handles missing dataKey', () => {
       const node = pickFields({
         id: 'pick',
         label: 'Pick fields',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         fields: ['id', 'name']
       })
 
@@ -204,41 +204,41 @@ describe('Transform Node Factories', () => {
       const node = mapRows({
         id: 'map',
         label: 'Add fullLabel',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         mapper: row => ({
           ...row,
           fullLabel: `${row.name} (${row.city})`
         })
       })
 
-      const result = node.transform!({ customers })
+      const result = node.transform!({ accounts })
 
       expect(result.rows).toHaveLength(4)
       const ravi = result.rows.find((row: any) => row.id === 1)
       expect(ravi?.fullLabel).toBe('Ravi (Chennai)')
-      expect(result.fields).toEqual(customers.fields)
+      expect(result.fields).toEqual(accounts.fields)
     })
 
     it('does not mutate original rows', () => {
-      const originalCustomers = JSON.parse(JSON.stringify(customers))
+      const originalCustomers = JSON.parse(JSON.stringify(accounts))
       
       const node = mapRows({
         id: 'map',
         label: 'Add field',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         mapper: row => ({ ...row, newField: 'test' })
       })
 
-      node.transform!({ customers })
+      node.transform!({ accounts })
 
-      expect(customers).toEqual(originalCustomers)
+      expect(accounts).toEqual(originalCustomers)
     })
 
     it('handles missing dataKey', () => {
       const node = mapRows({
         id: 'map',
         label: 'Map rows',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         mapper: row => row
       })
 
@@ -253,27 +253,27 @@ describe('Transform Node Factories', () => {
       const node = sortRows({
         id: 'sort',
         label: 'Sort by name',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         field: 'name',
         direction: 'asc'
       })
 
-      const result = node.transform!({ customers })
+      const result = node.transform!({ accounts })
 
       expect(result.rows.map((row: any) => row.name)).toEqual(['Anu', 'Karthik', 'Priya', 'Ravi'])
-      expect(result.fields).toEqual(customers.fields)
+      expect(result.fields).toEqual(accounts.fields)
     })
 
     it('sorts by score descending', () => {
       const node = sortRows({
         id: 'sort',
         label: 'Sort by score',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         field: 'score',
         direction: 'desc'
       })
 
-      const result = node.transform!({ customers })
+      const result = node.transform!({ accounts })
 
       expect(result.rows.map((row: any) => row.name)).toEqual(['Anu', 'Priya', 'Ravi', 'Karthik'])
       expect(result.rows.map((row: any) => row.score)).toEqual([95, 92, 85, 78])
@@ -311,7 +311,7 @@ describe('Transform Node Factories', () => {
       const node = sortRows({
         id: 'sort',
         label: 'Sort',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         field: 'name',
         direction: 'asc'
       })
@@ -327,50 +327,50 @@ describe('Transform Node Factories', () => {
       const node = limitRows({
         id: 'limit',
         label: 'Limit rows',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         n: 2
       })
 
-      const result = node.transform!({ customers })
+      const result = node.transform!({ accounts })
 
       expect(result.rows).toHaveLength(2)
       expect(result.rows.map((row: any) => row.name)).toEqual(['Ravi', 'Priya'])
-      expect(result.fields).toEqual(customers.fields)
+      expect(result.fields).toEqual(accounts.fields)
     })
 
     it('handles limit larger than dataset', () => {
       const node = limitRows({
         id: 'limit',
         label: 'Limit rows',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         n: 10
       })
 
-      const result = node.transform!({ customers })
+      const result = node.transform!({ accounts })
 
       expect(result.rows).toHaveLength(4)
-      expect(result.rows).toEqual(customers.rows)
+      expect(result.rows).toEqual(accounts.rows)
     })
 
     it('handles limit of 0', () => {
       const node = limitRows({
         id: 'limit',
         label: 'Limit rows',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         n: 0
       })
 
-      const result = node.transform!({ customers })
+      const result = node.transform!({ accounts })
 
       expect(result.rows).toEqual([])
-      expect(result.fields).toEqual(customers.fields)
+      expect(result.fields).toEqual(accounts.fields)
     })
 
     it('handles missing dataKey', () => {
       const node = limitRows({
         id: 'limit',
         label: 'Limit rows',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         n: 2
       })
 
@@ -401,7 +401,7 @@ describe('Transform Node Factories', () => {
     })
 
     it('aggregates with groupBy correctly', () => {
-      const customersWithCity = {
+      const accountsWithCity = {
         rows: [
           { id: 1, name: 'Ravi',    city: 'Chennai',   score: 85 },
           { id: 2, name: 'Priya',   city: 'Mumbai',    score: 92 },
@@ -421,7 +421,7 @@ describe('Transform Node Factories', () => {
         }
       })
 
-      const result = node.transform!({ data: customersWithCity })
+      const result = node.transform!({ data: accountsWithCity })
 
       expect(result.rows).toHaveLength(3)
       
@@ -445,14 +445,14 @@ describe('Transform Node Factories', () => {
       const node = aggregateRows({
         id: 'aggregate',
         label: 'Aggregate by city',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         groupBy: ['city'],
         aggregations: {
           id: { count: true }
         }
       })
 
-      const result = node.transform!({ customers })
+      const result = node.transform!({ accounts })
 
       result.rows.forEach((row: any) => {
         expect(row).not.toHaveProperty('groupKey')
@@ -464,14 +464,14 @@ describe('Transform Node Factories', () => {
       const node = aggregateRows({
         id: 'aggregate',
         label: 'Aggregate by city and name',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         groupBy: ['city', 'name'],
         aggregations: {
           id: { count: true }
         }
       })
 
-      const result = node.transform!({ customers })
+      const result = node.transform!({ accounts })
 
       const raviRow = result.rows.find((row: any) => row.name === 'Ravi' && row.city === 'Chennai')
       expect(raviRow).toHaveProperty('city', 'Chennai')
@@ -483,7 +483,7 @@ describe('Transform Node Factories', () => {
       const node = aggregateRows({
         id: 'aggregate',
         label: 'Aggregate',
-        dataKey: 'customers',
+        dataKey: 'accounts',
         aggregations: {
           id: { count: true }
         }

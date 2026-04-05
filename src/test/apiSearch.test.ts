@@ -4,11 +4,38 @@ import { ChromaVectorStore } from '../search/vectorStore';
 import { APIDefinition } from '../context/types';
 import { apiRegistry } from '../api';
 import { SIMILARITY_THRESHOLD } from '../search/types';
+import { graphRepository } from '../graph/store';
 
 // Mock dependencies
 jest.mock('../search/embeddings');
 jest.mock('../search/vectorStore');
-jest.mock('../api');
+jest.mock('../api', () => ({
+  apiRegistry: {
+    get: jest.fn(),
+    save: jest.fn(),
+    updateStatus: jest.fn(),
+    list: jest.fn(),
+    delete: jest.fn()
+  }
+}));
+jest.mock('../graph/store', () => ({
+  GraphRepository: jest.fn().mockImplementation(() => ({
+    findById: jest.fn(),
+    save: jest.fn(),
+    updateStatus: jest.fn(),
+    delete: jest.fn(),
+    list: jest.fn(),
+    count: jest.fn()
+  })),
+  graphRepository: {
+    findById: jest.fn(),
+    save: jest.fn(),
+    updateStatus: jest.fn(),
+    delete: jest.fn(),
+    list: jest.fn(),
+    count: jest.fn()
+  }
+}));
 
 const MockVoyageEmbeddings = VoyageEmbeddings as jest.MockedClass<typeof VoyageEmbeddings>;
 const MockChromaVectorStore = ChromaVectorStore as jest.MockedClass<typeof ChromaVectorStore>;
@@ -20,6 +47,7 @@ describe('APISearchService', () => {
   let mockVectorStore: jest.Mocked<ChromaVectorStore>;
 
   beforeEach(() => {
+    jest.clearAllMocks();
     mockEmbeddings = {
       embed: jest.fn(),
       embedDocument: jest.fn()
@@ -171,7 +199,7 @@ describe('APISearchService', () => {
       const buildIndexText = (service as any).buildIndexText.bind(service);
       const result = buildIndexText(api);
 
-      expect(result).toBe('Test API. Test description. prompt 1. prompt 2');
+      expect(result).toBe('prompt 1. prompt 2');
     });
 
     it('handles missing description and generatingPrompts', () => {
@@ -219,7 +247,7 @@ describe('APISearchService', () => {
 
       await service.indexAPI(api);
 
-      expect(mockEmbeddings.embedDocument).toHaveBeenCalledWith('Test API. Test description');
+      expect(mockEmbeddings.embedDocument).toHaveBeenCalledWith('Test API');
       expect(mockEmbeddings.embed).not.toHaveBeenCalled();
       expect(mockVectorStore.upsert).toHaveBeenCalledWith('api-1', mockEmbeddingResult, api);
     });

@@ -5,7 +5,7 @@ import { QueryPlan } from '../plans/types';
 
 describe('validatePlan', () => {
   it('returns valid for a well-formed plan', () => {
-    const result = validatePlan({ needsDb: true, entity: 'customers', select: ['customers.*'] })
+    const result = validatePlan({ needsDb: true, entity: 'accounts', select: ['accounts.*'] })
     expect(result.valid).toBe(true)
   })
 
@@ -23,8 +23,8 @@ describe('validatePlan', () => {
   it('returns error for disallowed operator', () => {
     const result = validatePlan({
       needsDb: true,
-      entity: 'customers',
-      where: [{ field: 'customers.name', op: 'DROP', value: 'x' }]
+      entity: 'accounts',
+      where: [{ field: 'accounts.name', op: 'DROP', value: 'x' }]
     })
     expect(result.valid).toBe(false)
   })
@@ -40,9 +40,9 @@ describe('validatePlan', () => {
     // We'll test this by checking that the field validation doesn't fail for joined table fields
     const result = validatePlan({
       needsDb: true,
-      entity: 'customers',
-      select: ['customers.*'],
-      where: [{ field: 'customers.name', op: '=', value: 'test' }] // Use primary table field first
+      entity: 'accounts',
+      select: ['accounts.*'],
+      where: [{ field: 'accounts.name', op: '=', value: 'test' }] // Use primary table field first
     })
     
     // This should pass - primary table field should be valid
@@ -55,21 +55,21 @@ describe('validatePlan', () => {
     jest.doMock('../schema/metadata', () => ({
       getSchemaMetadata: () => ({
         tables: {
-          customers: {
+          accounts: {
             fields: {
-              'customers.id': { type: 'INTEGER', filterable: true, selectable: true, sortable: true },
-              'customers.name': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
-              'customers.*': { type: 'text', filterable: false, selectable: true, sortable: false }
+              'accounts.id': { type: 'INTEGER', filterable: true, selectable: true, sortable: true },
+              'accounts.name': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
+              'accounts.*': { type: 'text', filterable: false, selectable: true, sortable: false }
             },
             joins: {
-              'orders': 'customers.id = orders.customer_id'
+              'opportunities': 'accounts.id = opportunities.account_id'
             }
           },
-          orders: {
+          opportunities: {
             fields: {
-              'orders.id': { type: 'INTEGER', filterable: true, selectable: true, sortable: true },
-              'orders.item': { type: 'TEXT', filterable: true, selectable: true, sortable: true },
-              'orders.*': { type: 'text', filterable: false, selectable: true, sortable: false }
+              'opportunities.id': { type: 'INTEGER', filterable: true, selectable: true, sortable: true },
+              'opportunities.amount': { type: 'DECIMAL', filterable: true, selectable: true, sortable: true },
+              'opportunities.*': { type: 'text', filterable: false, selectable: true, sortable: false }
             },
             joins: undefined
           }
@@ -82,14 +82,14 @@ describe('validatePlan', () => {
     
     const resultWithJoin = validatePlanWithJoins({
       needsDb: true,
-      entity: 'customers',
-      join: [{ table: 'orders', type: 'INNER' }],
-      where: [{ field: 'orders.item', op: 'LIKE', value: 'x' }]
+      entity: 'accounts',
+      join: [{ table: 'opportunities', type: 'INNER' }],
+      where: [{ field: 'opportunities.amount', op: '>', value: 100 }]
     })
     
-    // Should not have field validation errors for orders.item
+    // Should not have field validation errors for opportunities.amount
     const fieldErrors = resultWithJoin.issues.filter((i: any) => 
-      i.message.includes('orders.item') && i.message.includes('not found')
+      i.message.includes('opportunities.amount') && i.message.includes('not found')
     );
     expect(fieldErrors.length).toBe(0)
   })
@@ -97,8 +97,8 @@ describe('validatePlan', () => {
   it('still warns about fields not in any joined table', () => {
     const result = validatePlan({
       needsDb: true,
-      entity: 'customers',
-      join: [{ table: 'orders', type: 'INNER' }],
+      entity: 'accounts',
+      join: [{ table: 'opportunities', type: 'INNER' }],
       where: [{ field: 'products.name', op: '=', value: 'x' }]
     })
     expect(result.valid).toBe(false)
